@@ -3,19 +3,30 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "Backend for KHAREEDLO multi-vendor platform (Node.js + Express + MongoDB)",
   "dependencies": {
     "axios": "^1.13.2",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
-    "express": "^5.1.0",
+    "express": "^5.2.1",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.19.3"
-  }
+    "mongoose": "^8.20.2",
+    "mysql2": "^3.16.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Affansiddiqui03/khareedlo-backend.git"
+  },
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Affansiddiqui03/khareedlo-backend/issues"
+  },
+  "homepage": "https://github.com/Affansiddiqui03/khareedlo-backend#readme"
 }
