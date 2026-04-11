@@ -4,8 +4,18 @@ const router = express.Router();
 const db = require("../config/db");
 
 router.get("/:brandId", (req, res) => {
-  const sql = `SELECT name, email, contact, city, address, description, website 
-               FROM brands WHERE brand_id = ?`;
+  const sql = `
+  SELECT 
+    brand_name AS name,
+    email,
+    contact,
+    city,
+    address,
+    description,
+    website
+  FROM brands
+  WHERE brand_id = ? AND status = 'APPROVED'  -- Only approved brands can be viewed
+`;
 
   db.query(sql, [req.params.brandId], (err, result) => {
     if (err) return res.status(500).json({ error: "DB error" });

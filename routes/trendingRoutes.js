@@ -1,29 +1,88 @@
 const express = require("express");
 const router = express.Router();
-const db = require("../config/db"); // path check kar lena
+const db = require("../config/db");
+const { resolveProductImage } = require("../utils/imageHelper");
 
 router.get("/", (req, res) => {
   const sql = `
-    SELECT 
-      p.product_id,
-      p.product_name,
-      p.image,
-      p.price,
-      COUNT(pa.pos_id) AS buy_now_clicks
-    FROM pos_activity pa
-    JOIN products p ON pa.product_id = p.product_id
-    WHERE pa.action = 'BUY_NOW'
-    GROUP BY p.product_id
-    ORDER BY buy_now_clicks DESC
-    LIMIT 8
+    (
+      SELECT 
+        p.product_id AS id,
+        p.product_name,
+        p.product_name AS title,
+        p.price,
+        p.image,
+        b.brand_name AS brand,
+        COUNT(pa.pos_id) AS clicks
+      FROM products p
+      JOIN brands b ON p.brand_id = b.brand_id
+      LEFT JOIN pos_activity pa 
+        ON pa.product_id = p.product_id 
+        AND pa.action = 'BUY_NOW'
+      WHERE b.brand_name = 'J. By Junaid Jamshed'
+      GROUP BY p.product_id
+      ORDER BY clicks DESC
+      LIMIT 2
+    )
+    UNION ALL
+    (
+      SELECT 
+        p.product_id AS id,
+        p.product_name,
+        p.product_name AS title,
+        p.price,
+        p.image,
+        b.brand_name AS brand,
+        COUNT(pa.pos_id) AS clicks
+      FROM products p
+      JOIN brands b ON p.brand_id = b.brand_id
+      LEFT JOIN pos_activity pa 
+        ON pa.product_id = p.product_id 
+        AND pa.action = 'BUY_NOW'
+      WHERE b.brand_name = 'Alkaram'
+      GROUP BY p.product_id
+      ORDER BY clicks DESC
+      LIMIT 2
+    )
+    UNION ALL
+    (
+      SELECT 
+        p.product_id AS id,
+        p.product_name,
+        p.product_name AS title,
+        p.price,
+        p.image,
+        b.brand_name AS brand,
+        COUNT(pa.pos_id) AS clicks
+      FROM products p
+      JOIN brands b ON p.brand_id = b.brand_id
+      LEFT JOIN pos_activity pa 
+        ON pa.product_id = p.product_id 
+        AND pa.action = 'BUY_NOW'
+      WHERE b.brand_name = 'Limelight'
+      GROUP BY p.product_id
+      ORDER BY clicks DESC
+      LIMIT 2
+    );
   `;
 
-  db.query(sql, (err, result) => {
+  db.query(sql, (err, rows) => {
     if (err) {
-      console.error(err);
-      return res.status(500).json({ error: "Database error" });
+      console.error("Trending SQL error:", err);
+      return res.status(500).json([]);
     }
-    res.json(result);
+
+    res.json(
+      rows.map(p => ({
+        ...p,
+        image:
+          p.image &&
+          p.image !== "photos/" &&
+          p.image !== ""
+            ? p.image
+            : resolveProductImage(p.product_name)
+      }))
+    );
   });
 });
 

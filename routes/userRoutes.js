@@ -101,4 +101,38 @@ router.get("/orders", auth, async (req, res) => {
   }
 });
 
+router.post("/track/brand", auth, async (req, res) => {
+  const user = await User.findById(req.user.id);
+  user.activityStats.visitedBrands += 1;
+  await user.save();
+  res.json({ success: true });
+});
+
+router.post("/track/product-click", auth, async (req, res) => {
+  const { productName, brandName } = req.body;
+
+  const user = await User.findById(req.user.id);
+  user.activityStats.productClicks += 1;
+
+  user.recentActivities.unshift({ productName, brandName });
+  user.recentActivities = user.recentActivities.slice(0, 10);
+
+  await user.save();
+  res.json({ success: true });
+});
+
+router.post("/feedback", auth, async (req, res) => {
+  const { message } = req.body;
+  const user = await User.findById(req.user.id);
+  user.feedbacks.push({ message });
+  await user.save();
+  res.json({ msg: "Feedback submitted" });
+});
+
+router.post("/track/buy-redirect", auth, async (req, res) => {
+  const user = await User.findById(req.user.id);
+  user.activityStats.buyRedirects += 1;
+  await user.save();
+  res.json({ success: true });
+});
 module.exports = router;
