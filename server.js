@@ -3,8 +3,9 @@ const cors = require("cors");
 require("dotenv").config();
 const path = require("path");
 
+const app = express();
 
-const connectDB = require("./config/db"); // MySQL connection
+const connectDB = require("./config/db");
 const brandRoutes = require("./routes/brandRoutes");
 const outletRoutes = require("./routes/outletRoutes");
 const productRoutes = require("./routes/productRoutes");
@@ -16,22 +17,20 @@ const posRoutes = require("./routes/posRoutes");
 const trendingRoutes = require("./routes/trendingRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const feedbackRoutes = require("./routes/feedbackRoutes");
-
-const app = express();
-
+const ratingsRoutes = require("./routes/ratingsRoutes");
+const contactRoutes = require("./routes/contactRoutes");
+const syncRoutes = require("./routes/syncRoutes");
+const orderRoutes = require("./routes/orderRoutes");
 // Middleware
 app.use(express.json());
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 
-// Connect to MySQL
-// connectDB();
 
-// Routes
 app.use("/api/home", require("./routes/homeRoutes"));
 app.use("/api/auth", authRoutes);
-app.use("/api/brands", brandRoutes); // GET brands
-app.use("/api/brand", require("./routes/brandRegisterRoutes")); // REGISTER
+app.use("/api/brands", brandRoutes);
+app.use("/api/brand", require("./routes/brandRegisterRoutes"));
 app.use("/api/outlets", outletRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/wishlist", wishlistRoutes);
@@ -43,6 +42,11 @@ app.use("/api/brand-profile", require("./routes/brandProfileRoutes"));
 app.use("/api/admin", adminRoutes);
 app.use("/api/feedback", feedbackRoutes);
 app.use("/api/brand", require("./routes/brandDashboardRoutes"));
+app.use("/api/contact", contactRoutes);
+
+app.use("/api/ratings", require("./routes/ratingsRoutes"));
+app.use("/api/sync", syncRoutes);
+app.use("/api/orders", orderRoutes);
 
 
 app.use(
