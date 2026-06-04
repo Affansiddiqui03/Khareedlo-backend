@@ -84,3 +84,59 @@ router.post("/register", (req, res) => {
 });
 
 module.exports = router;
+
+// ── FORGOT PASSWORD (Customer + Brand) ────────────────────────
+router.post("/forgot-password", (req, res) => {
+  const { email, newPassword, userType } = req.body;
+
+  if (!email || !newPassword || !userType)
+    return res.status(400).json({ message: "All fields required" });
+
+  // Email format validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email))
+    return res.status(400).json({ message: "Invalid email format" });
+
+  if (newPassword.length < 6)
+    return res.status(400).json({ message: "Password must be at least 6 characters" });
+
+  if (userType === "customer") {
+    db.query(
+      "SELECT customer_id FROM customers WHERE email = ?",
+      [email],
+      (err, rows) => {
+        if (err) return res.status(500).json({ message: "DB error" });
+        if (!rows.length) return res.status(404).json({ message: "No customer found with this email" });
+
+        db.query(
+          "UPDATE customers SET password = ? WHERE email = ?",
+          [newPassword, email],
+          (err2) => {
+            if (err2) return res.status(500).json({ message: "Update failed" });
+            res.json({ message: "Password updated successfully" });
+          }
+        );
+      }
+    );
+  } else if (userType === "brand") {
+    db.query(
+      "SELECT brand_id FROM brands WHERE email = ?",
+      [email],
+      (err, rows) => {
+        if (err) return res.status(500).json({ message: "DB error" });
+        if (!rows.length) return res.status(404).json({ message: "No brand found with this email" });
+
+        db.query(
+          "UPDATE brands SET password = ? WHERE email = ?",
+          [newPassword, email],
+          (err2) => {
+            if (err2) return res.status(500).json({ message: "Update failed" });
+            res.json({ message: "Brand password updated successfully" });
+          }
+        );
+      }
+    );
+  } else {
+    res.status(400).json({ message: "Invalid user type" });
+  }
+});
