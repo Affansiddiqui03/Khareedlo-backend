@@ -6,28 +6,10 @@
 const express = require("express");
 const router  = express.Router();
 const db      = require("../config/db");
-const multer  = require("multer");
-const path    = require("path");
-const fs      = require("fs");
-
-/* ── Multer ── */
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(__dirname, "../photos/products");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname.replace(/\s+/g, "_"));
-  },
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) cb(null, true);
-    else cb(new Error("Only images allowed"), false);
-  },
+const { uploadProduct } = require("../config/cloudinary");
+const upload = { single: (field) => uploadProduct.single(field) };
+// upload.single is now Cloudinary — images stored permanently on Cloudinary
+const _multerCompat = {
 });
 
 // ── PKT timezone helper (UTC+5) ───────────────────────────────
@@ -144,7 +126,7 @@ router.post("/add-product", upload.single("image"), (req, res) => {
     return res.status(400).json({ message: "Missing required fields" });
   }
 
-  const imagePath = req.file ? `photos/products/${req.file.filename}` : null;
+  const imagePath = req.file ? req.file.path : null; // Cloudinary full URL
 
   db.query(
     `INSERT INTO products

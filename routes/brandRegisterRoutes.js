@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../config/db");
-const multer = require("multer");
+const { uploadLogo } = require("../config/cloudinary");
 const path = require("path");
 
 // ✅ STORAGE FIX
@@ -19,7 +19,7 @@ const upload = multer({ storage });
 // ✅ BRAND REGISTER
 router.post("/register", upload.single("logo"), (req, res) => {
   const { brandName, email, password, contact, website } = req.body;
-  const logo = req.file ? `photos/brands/${req.file.filename}` : null;
+  const logo = req.file ? req.file.path : null; // Cloudinary URL
 
   if (!brandName || !email || !password) {
     return res.status(400).json({ message: "Missing required fields" });
