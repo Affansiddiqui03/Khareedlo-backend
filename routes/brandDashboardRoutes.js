@@ -9,8 +9,7 @@ const db      = require("../config/db");
 const { uploadProduct } = require("../config/cloudinary");
 const upload = { single: (field) => uploadProduct.single(field) };
 // upload.single is now Cloudinary — images stored permanently on Cloudinary
-const _multerCompat = {
-});
+
 
 // ── PKT timezone helper (UTC+5) ───────────────────────────────
 // Converts Node.js Date to a "YYYY-MM-DD" string in Pakistan time (UTC+5)
