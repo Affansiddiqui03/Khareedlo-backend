@@ -1,29 +1,15 @@
-const express = require("express");
-const router = express.Router();
-const db = require("../config/db");
+const express  = require("express");
+const router   = express.Router();
+const db       = require("../config/db");
 const { uploadLogo } = require("../config/cloudinary");
-const path = require("path");
 
-// ✅ STORAGE FIX
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "photos/brands"); // 👈 SAME AS STATIC
-  },
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + "-" + file.originalname);
-  },
-});
-
-const upload = multer({ storage });
-
-// ✅ BRAND REGISTER
-router.post("/register", upload.single("logo"), (req, res) => {
+// ── POST /api/brand/register ──────────────────────────────────
+router.post("/register", uploadLogo.single("logo"), (req, res) => {
   const { brandName, email, password, contact, website } = req.body;
-  const logo = req.file ? req.file.path : null; // Cloudinary URL
+  const logo = req.file ? req.file.path : null; // Cloudinary full URL
 
-  if (!brandName || !email || !password) {
+  if (!brandName || !email || !password)
     return res.status(400).json({ message: "Missing required fields" });
-  }
 
   const sql = `
     INSERT INTO brands
@@ -31,18 +17,13 @@ router.post("/register", upload.single("logo"), (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
   `;
 
-  db.query(
-    sql,
-    [brandName, email, password, contact, website, logo],
-    (err) => {
-      if (err) {
-        console.error("Brand Register Error:", err);
-        return res.status(400).json({ message: "Brand already exists" });
-      }
-
-      res.json({ message: "Brand registered, awaiting admin approval" });
+  db.query(sql, [brandName, email, password, contact, website, logo], (err) => {
+    if (err) {
+      console.error("Brand Register Error:", err);
+      return res.status(400).json({ message: "Brand already exists or DB error" });
     }
-  );
+    res.json({ message: "Brand registered, awaiting admin approval" });
+  });
 });
 
 module.exports = router;
