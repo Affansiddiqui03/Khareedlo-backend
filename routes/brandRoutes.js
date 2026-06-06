@@ -42,6 +42,7 @@ router.get("/", (req, res) => {
       website,
       rating,
       logo,
+      banner,
       contact
     FROM brands
     WHERE status = 'APPROVED'
@@ -67,6 +68,7 @@ router.get("/:id", (req, res) => {
       website,
       rating,
       logo,
+      banner,
       contact
     FROM brands
     WHERE brand_id = ? AND status = 'APPROVED'
