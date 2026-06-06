@@ -13,7 +13,7 @@ const fs      = require("fs");
 // GET all APPROVED brands
 router.get("/brands", (req, res) => {
   db.query(
-    `SELECT brand_id, brand_name, email, city, contact, logo, website, rating, status
+    `SELECT brand_id, brand_name, email, city, contact, logo, banner, website, rating, status
      FROM brands WHERE status = 'APPROVED' ORDER BY brand_name ASC`,
     (err, rows) => {
       if (err) return res.status(500).json(err);
@@ -25,7 +25,7 @@ router.get("/brands", (req, res) => {
 // GET pending brand applications
 router.get("/brands/pending", (req, res) => {
   db.query(
-    `SELECT brand_id, brand_name, email, city, contact, logo, website, status
+    `SELECT brand_id, brand_name, email, city, contact, logo, banner, website, status
      FROM brands WHERE status = 'PENDING' ORDER BY brand_id DESC`,
     (err, rows) => {
       if (err) return res.status(500).json(err);
@@ -37,7 +37,7 @@ router.get("/brands/pending", (req, res) => {
 // GET all brands regardless of status (admin full list)
 router.get("/brands/all", (req, res) => {
   db.query(
-    `SELECT brand_id, brand_name, email, city, contact, logo, website, rating, status
+    `SELECT brand_id, brand_name, email, city, contact, logo, banner, website, rating, status
      FROM brands ORDER BY brand_id DESC`,
     (err, rows) => {
       if (err) return res.status(500).json(err);
@@ -250,5 +250,39 @@ router.get("/stats", async (req, res) => {
   }
 });
 
+
+
+// ══════════════════════════════════════════════════════
+//  ONE-TIME: Clean up local "photos/" image paths → set NULL
+//  POST /api/admin/cleanup-local-images
+//  Call this once from admin panel or Postman
+// ══════════════════════════════════════════════════════
+router.post("/cleanup-local-images", (req, res) => {
+  const queries = [
+    "UPDATE products SET image = NULL WHERE image IS NOT NULL AND image NOT LIKE 'http%'",
+    "UPDATE brands   SET logo  = NULL WHERE logo  IS NOT NULL AND logo  NOT LIKE 'http%'",
+    "UPDATE brands   SET banner= NULL WHERE banner IS NOT NULL AND banner NOT LIKE 'http%'",
+  ];
+
+  let done = 0;
+  let totalAffected = 0;
+  const errors = [];
+
+  queries.forEach(sql => {
+    db.query(sql, (err, result) => {
+      done++;
+      if (err) errors.push(err.message);
+      else totalAffected += result.affectedRows;
+
+      if (done === queries.length) {
+        if (errors.length) return res.status(500).json({ errors });
+        res.json({
+          success: true,
+          message: `Cleaned up ${totalAffected} local image paths. They will show as "No Image" until re-uploaded via Cloudinary.`
+        });
+      }
+    });
+  });
+});
 
 module.exports = router;
