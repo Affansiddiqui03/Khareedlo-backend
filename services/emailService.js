@@ -1,16 +1,27 @@
 // services/emailService.js
-// Resend API — works perfectly on Railway
-// Admin notifications: khareedlo@gmail.com
-// Sender: onboarding@resend.dev (free tier, no domain needed)
+// Brevo (Sendinblue) SMTP — works on Railway, sends to ANY email
+// Admin: khareedlo26@gmail.com
+// SMTP via nodemailer
 
-const { Resend } = require("resend");
-const resend = new Resend(process.env.RESEND_API_KEY);
+const nodemailer = require("nodemailer");
+
+const transporter = nodemailer.createTransport({
+  host: "smtp-relay.brevo.com",
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.BREVO_LOGIN,       // ae38b0001@smtp-brevo.com
+    pass: process.env.BREVO_SMTP_KEY,    // your SMTP password from Brevo
+  },
+});
+
+const FROM_EMAIL = `"Khareedlo Platform" <${process.env.BREVO_SENDER_EMAIL}>`;
 
 // ── Email 1: Notify admin when a new brand registers ──────────
 async function sendAdminNewBrandNotification(brandName, brandEmail) {
   try {
-    await resend.emails.send({
-      from: "Khareedlo Platform <onboarding@resend.dev>",
+    await transporter.sendMail({
+      from: FROM_EMAIL,
       to: "khareedlo26@gmail.com",
       subject: `New Brand Registration: ${brandName}`,
       html: `
@@ -68,8 +79,8 @@ async function sendAdminNewBrandNotification(brandName, brandEmail) {
 // ── Email 2: Notify brand when admin approves them ────────────
 async function sendBrandApprovalEmail(brandName, brandEmail) {
   try {
-    await resend.emails.send({
-      from: "Khareedlo Platform <onboarding@resend.dev>",
+    await transporter.sendMail({
+      from: FROM_EMAIL,
       to: brandEmail,
       subject: `Your Brand Has Been Approved — Welcome to Khareedlo!`,
       html: `
@@ -103,7 +114,7 @@ async function sendBrandApprovalEmail(brandName, brandEmail) {
             </div>
             <p style="color: #6b7280; font-size: 13px; margin-top: 24px; line-height: 1.6;">
               If you have any questions, contact us at
-              <a href="mailto:khareedlo@gmail.com" style="color: #f97316;">khareedlo@gmail.com</a>.
+              <a href="mailto:khareedlo26@gmail.com" style="color: #f97316;">khareedlo26@gmail.com</a>.
             </p>
           </div>
           <p style="text-align: center; color: #9ca3af; font-size: 12px; margin-top: 16px;">
@@ -121,8 +132,8 @@ async function sendBrandApprovalEmail(brandName, brandEmail) {
 // ── Email 3: Notify brand when admin rejects them ─────────────
 async function sendBrandRejectionEmail(brandName, brandEmail) {
   try {
-    await resend.emails.send({
-      from: "Khareedlo Platform <onboarding@resend.dev>",
+    await transporter.sendMail({
+      from: FROM_EMAIL,
       to: brandEmail,
       subject: `Update on Your Khareedlo Brand Registration`,
       html: `
@@ -138,8 +149,8 @@ async function sendBrandRejectionEmail(brandName, brandEmail) {
               we were unable to approve your brand at this time.
             </p>
             <p style="color: #374151; font-size: 15px; line-height: 1.6;">
-              If you believe this is a mistake, please contact us at
-              <a href="mailto:khareedlo@gmail.com" style="color: #f97316;">khareedlo@gmail.com</a>.
+              If you believe this is a mistake or need clarification, please contact us at
+              <a href="mailto:khareedlo26@gmail.com" style="color: #f97316;">khareedlo26@gmail.com</a>.
             </p>
           </div>
           <p style="text-align: center; color: #9ca3af; font-size: 12px; margin-top: 16px;">
