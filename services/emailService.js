@@ -1,30 +1,37 @@
 // services/emailService.js
-// Brevo (Sendinblue) SMTP — works on Railway, sends to ANY email
-// Admin: khareedlo26@gmail.com
-// SMTP via nodemailer
+// Brevo HTTP API — works on Railway (no SMTP ports needed)
 
-const nodemailer = require("nodemailer");
+const FROM_EMAIL = process.env.BREVO_SENDER_EMAIL || "khareedlo26@gmail.com";
+const ADMIN_EMAIL = "khareedlo26@gmail.com";
 
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 465,
-  secure: true,
-  auth: {
-    user: process.env.BREVO_LOGIN,       // ae38b0001@smtp-brevo.com
-    pass: process.env.BREVO_SMTP_KEY,    // your SMTP password from Brevo
-  },
-});
+async function sendBrevoEmail(to, subject, html) {
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "api-key": process.env.BREVO_API_KEY,
+    },
+    body: JSON.stringify({
+      sender: { name: "Khareedlo Platform", email: FROM_EMAIL },
+      to: [{ email: to }],
+      subject,
+      htmlContent: html,
+    }),
+  });
 
-const FROM_EMAIL = `"Khareedlo Platform" <${process.env.BREVO_SENDER_EMAIL}>`;
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Brevo API error: ${err}`);
+  }
+}
 
 // ── Email 1: Notify admin when a new brand registers ──────────
 async function sendAdminNewBrandNotification(brandName, brandEmail) {
   try {
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to: "khareedlo26@gmail.com",
-      subject: `New Brand Registration: ${brandName}`,
-      html: `
+    await sendBrevoEmail(
+      ADMIN_EMAIL,
+      `New Brand Registration: ${brandName}`,
+      `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background: linear-gradient(135deg, #f97316, #ef4444); padding: 30px; border-radius: 12px 12px 0 0; text-align: center;">
             <h1 style="color: white; margin: 0; font-size: 24px;">Khareedlo Admin</h1>
@@ -68,8 +75,8 @@ async function sendAdminNewBrandNotification(brandName, brandEmail) {
             © ${new Date().getFullYear()} Khareedlo — Pakistan's Fashion Platform
           </p>
         </div>
-      `,
-    });
+      `
+    );
     console.log(`[Email] Admin notified: new brand "${brandName}" registered`);
   } catch (err) {
     console.error("[Email] Failed to notify admin:", err.message);
@@ -79,11 +86,10 @@ async function sendAdminNewBrandNotification(brandName, brandEmail) {
 // ── Email 2: Notify brand when admin approves them ────────────
 async function sendBrandApprovalEmail(brandName, brandEmail) {
   try {
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to: brandEmail,
-      subject: `Your Brand Has Been Approved — Welcome to Khareedlo!`,
-      html: `
+    await sendBrevoEmail(
+      brandEmail,
+      `Your Brand Has Been Approved — Welcome to Khareedlo!`,
+      `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background: linear-gradient(135deg, #f97316, #ef4444); padding: 30px; border-radius: 12px 12px 0 0; text-align: center;">
             <div style="font-size: 48px; margin-bottom: 10px;">🎉</div>
@@ -121,8 +127,8 @@ async function sendBrandApprovalEmail(brandName, brandEmail) {
             © ${new Date().getFullYear()} Khareedlo — Pakistan's Fashion Platform
           </p>
         </div>
-      `,
-    });
+      `
+    );
     console.log(`[Email] Approval email sent to brand: ${brandEmail}`);
   } catch (err) {
     console.error("[Email] Failed to send approval email:", err.message);
@@ -132,11 +138,10 @@ async function sendBrandApprovalEmail(brandName, brandEmail) {
 // ── Email 3: Notify brand when admin rejects them ─────────────
 async function sendBrandRejectionEmail(brandName, brandEmail) {
   try {
-    await transporter.sendMail({
-      from: FROM_EMAIL,
-      to: brandEmail,
-      subject: `Update on Your Khareedlo Brand Registration`,
-      html: `
+    await sendBrevoEmail(
+      brandEmail,
+      `Update on Your Khareedlo Brand Registration`,
+      `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background: linear-gradient(135deg, #6b7280, #374151); padding: 30px; border-radius: 12px 12px 0 0; text-align: center;">
             <h1 style="color: white; margin: 0; font-size: 24px;">Khareedlo</h1>
@@ -157,8 +162,8 @@ async function sendBrandRejectionEmail(brandName, brandEmail) {
             © ${new Date().getFullYear()} Khareedlo — Pakistan's Fashion Platform
           </p>
         </div>
-      `,
-    });
+      `
+    );
     console.log(`[Email] Rejection email sent to brand: ${brandEmail}`);
   } catch (err) {
     console.error("[Email] Failed to send rejection email:", err.message);
