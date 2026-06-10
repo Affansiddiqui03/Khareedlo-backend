@@ -1,27 +1,17 @@
 // services/emailService.js
-// Nodemailer service for Khareedlo notifications
-// Sender: khareedlo26@gmail.com
+// Resend API — works perfectly on Railway
 // Admin notifications: khareedlo@gmail.com
+// Sender: onboarding@resend.dev (free tier, no domain needed)
 
-const nodemailer = require("nodemailer");
-
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true, // SSL
-  family: 4,    // Force IPv4
-  auth: {
-    user: process.env.EMAIL_FROM,
-    pass: process.env.EMAIL_APP_PASSWORD,
-  },
-});
+const { Resend } = require("resend");
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ── Email 1: Notify admin when a new brand registers ──────────
 async function sendAdminNewBrandNotification(brandName, brandEmail) {
   try {
-    await transporter.sendMail({
-      from: `"Khareedlo Platform" <${process.env.EMAIL_FROM}>`,
-      to: "khareedlo@gmail.com",
+    await resend.emails.send({
+      from: "Khareedlo Platform <onboarding@resend.dev>",
+      to: "khareedlo26@gmail.com",
       subject: `New Brand Registration: ${brandName}`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -57,7 +47,7 @@ async function sendAdminNewBrandNotification(brandName, brandEmail) {
               </p>
             </div>
             <div style="text-align: center; margin-top: 24px;">
-              <a href="https://khareedlo.store/auth" 
+              <a href="https://khareedlo.store/auth"
                 style="background: linear-gradient(135deg, #f97316, #ef4444); color: white; padding: 12px 28px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 15px; display: inline-block;">
                 Go to Admin Dashboard
               </a>
@@ -78,8 +68,8 @@ async function sendAdminNewBrandNotification(brandName, brandEmail) {
 // ── Email 2: Notify brand when admin approves them ────────────
 async function sendBrandApprovalEmail(brandName, brandEmail) {
   try {
-    await transporter.sendMail({
-      from: `"Khareedlo Platform" <${process.env.EMAIL_FROM}>`,
+    await resend.emails.send({
+      from: "Khareedlo Platform <onboarding@resend.dev>",
       to: brandEmail,
       subject: `Your Brand Has Been Approved — Welcome to Khareedlo!`,
       html: `
@@ -90,11 +80,10 @@ async function sendBrandApprovalEmail(brandName, brandEmail) {
             <p style="color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 15px;">Your brand has been approved on Khareedlo</p>
           </div>
           <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
-            <p style="color: #374151; font-size: 16px; line-height: 1.6;">
-              Dear <strong>${brandName}</strong>,
-            </p>
+            <p style="color: #374151; font-size: 16px; line-height: 1.6;">Dear <strong>${brandName}</strong>,</p>
             <p style="color: #374151; font-size: 15px; line-height: 1.6;">
-              We're excited to inform you that your brand registration on <strong>Khareedlo</strong> has been <span style="color: #16a34a; font-weight: bold;">approved</span>! 
+              We're excited to inform you that your brand registration on <strong>Khareedlo</strong> has been
+              <span style="color: #16a34a; font-weight: bold;">approved</span>!
               You can now log in to your Brand Dashboard and start showcasing your products to thousands of shoppers across Pakistan.
             </p>
             <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 20px; margin: 24px 0;">
@@ -107,13 +96,13 @@ async function sendBrandApprovalEmail(brandName, brandEmail) {
               </ul>
             </div>
             <div style="text-align: center; margin-top: 24px;">
-              <a href="https://khareedlo.store/auth" 
+              <a href="https://khareedlo.store/auth"
                 style="background: linear-gradient(135deg, #f97316, #ef4444); color: white; padding: 14px 32px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px; display: inline-block;">
                 Login to Your Dashboard
               </a>
             </div>
             <p style="color: #6b7280; font-size: 13px; margin-top: 24px; line-height: 1.6;">
-              If you have any questions or need help getting started, feel free to contact us at 
+              If you have any questions, contact us at
               <a href="mailto:khareedlo@gmail.com" style="color: #f97316;">khareedlo@gmail.com</a>.
             </p>
           </div>
@@ -132,8 +121,8 @@ async function sendBrandApprovalEmail(brandName, brandEmail) {
 // ── Email 3: Notify brand when admin rejects them ─────────────
 async function sendBrandRejectionEmail(brandName, brandEmail) {
   try {
-    await transporter.sendMail({
-      from: `"Khareedlo Platform" <${process.env.EMAIL_FROM}>`,
+    await resend.emails.send({
+      from: "Khareedlo Platform <onboarding@resend.dev>",
       to: brandEmail,
       subject: `Update on Your Khareedlo Brand Registration`,
       html: `
@@ -145,12 +134,12 @@ async function sendBrandRejectionEmail(brandName, brandEmail) {
           <div style="background: #ffffff; padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 12px 12px;">
             <p style="color: #374151; font-size: 16px; line-height: 1.6;">Dear <strong>${brandName}</strong>,</p>
             <p style="color: #374151; font-size: 15px; line-height: 1.6;">
-              Thank you for your interest in joining Khareedlo. After reviewing your registration, 
+              Thank you for your interest in joining Khareedlo. After reviewing your registration,
               we were unable to approve your brand at this time.
             </p>
             <p style="color: #374151; font-size: 15px; line-height: 1.6;">
-              If you believe this is a mistake or would like more information, please contact us at 
-              <a href="mailto:khareedlo@gmail.com" style="color: #f97316;">khareedlo@gmail.com</a> and we'll be happy to assist you.
+              If you believe this is a mistake, please contact us at
+              <a href="mailto:khareedlo@gmail.com" style="color: #f97316;">khareedlo@gmail.com</a>.
             </p>
           </div>
           <p style="text-align: center; color: #9ca3af; font-size: 12px; margin-top: 16px;">
