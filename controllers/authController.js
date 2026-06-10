@@ -2,23 +2,31 @@ const db = require("../config/db");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
+const ADMIN_EMAIL = "khareedlo@gmail.com";
+
 exports.register = async (req, res) => {
   const { name, email, password } = req.body;
+  const normalizedEmail = (email || "").trim().toLowerCase();
+
+  // Block admin email from being registered as a user
+  if (normalizedEmail === ADMIN_EMAIL) {
+    return res.status(400).json({ message: "This email address is not available for registration." });
+  }
 
   const [exists] = await db.query(
-    "SELECT user_id FROM users WHERE email=?",
-    [email]
+    "SELECT user_id FROM users WHERE LOWER(email)=?",
+    [normalizedEmail]
   );
 
   if (exists.length) {
-    return res.status(400).json({ message: "Email already exists" });
+    return res.status(400).json({ message: "This email is already registered. Please login or use a different email." });
   }
 
   const hashed = await bcrypt.hash(password, 10);
 
   await db.query(
     "INSERT INTO users (name,email,password) VALUES (?,?,?)",
-    [name, email, hashed]
+    [name, normalizedEmail, hashed]
   );
 
   res.json({ message: "Account created successfully" });
@@ -26,10 +34,11 @@ exports.register = async (req, res) => {
 
 exports.login = async (req, res) => {
   const { email, password } = req.body;
+  const normalizedEmail = (email || "").trim().toLowerCase();
 
   const [rows] = await db.query(
-    "SELECT * FROM users WHERE email=?",
-    [email]
+    "SELECT * FROM users WHERE LOWER(email)=?",
+    [normalizedEmail]
   );
 
   if (!rows.length) {
@@ -51,6 +60,6 @@ exports.login = async (req, res) => {
 
   res.json({
     token,
-    user: { name: user.name, role: user.role }
+    user: { id: user.user_id, name: user.name, email: user.email, role: user.role }
   });
 };

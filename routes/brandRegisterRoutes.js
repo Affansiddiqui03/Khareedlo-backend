@@ -41,33 +41,58 @@ function isValidEmail(email) {
   return VALID_TLDS.has(tld);
 }
 
+const ADMIN_EMAIL = "khareedlo@gmail.com";
+
 // ── POST /api/brand/register ──────────────────────────────────
-router.post("/register", uploadLogo.single("logo"), (req, res) => {
+router.post("/register", uploadLogo.single("logo"), async (req, res) => {
   const { brandName, email, password, contact, website } = req.body;
-  const logo = req.file ? req.file.path : null; // Cloudinary full URL
+  const normalizedEmail = (email || "").trim().toLowerCase();
+  const logo = req.file ? req.file.path : null;
 
   if (!brandName || !brandName.trim())
     return res.status(400).json({ message: "Brand name is required" });
-  if (!isValidEmail(email))
+  if (!isValidEmail(normalizedEmail))
     return res.status(400).json({ message: "Please enter a valid email address (e.g. brand@gmail.com)" });
   if (!password || password.length < 6)
     return res.status(400).json({ message: "Password must be at least 6 characters" });
 
-  const sql = `
-    INSERT INTO brands
-    (brand_name, email, password, contact, website, logo, status)
-    VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
-  `;
+  // Block admin email
+  if (normalizedEmail === ADMIN_EMAIL) {
+    return res.status(400).json({ message: "This email address is not available for registration." });
+  }
 
-  db.query(sql, [brandName, email, password, contact, website, logo], (err) => {
-    if (err) {
-      console.error("Brand Register Error:", err);
-      return res.status(400).json({ message: "Brand already exists or DB error" });
+  try {
+    // Check if email already used by a brand
+    const [brandExists] = await db.query(
+      "SELECT brand_id FROM brands WHERE LOWER(email)=?",
+      [normalizedEmail]
+    );
+    if (brandExists.length) {
+      return res.status(400).json({ message: "A brand with this email already exists. Please login or use a different email." });
     }
-    // Send email notification to admin (non-blocking)
-    sendAdminNewBrandNotification(brandName, email);
+
+    // Check if email already used by a regular user
+    const [userExists] = await db.query(
+      "SELECT user_id FROM users WHERE LOWER(email)=?",
+      [normalizedEmail]
+    );
+    if (userExists.length) {
+      return res.status(400).json({ message: "This email is already registered as a customer account. Please use a different email for your brand." });
+    }
+
+    const sql = `
+      INSERT INTO brands
+      (brand_name, email, password, contact, website, logo, status)
+      VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
+    `;
+
+    await db.query(sql, [brandName, normalizedEmail, password, contact, website, logo]);
+    sendAdminNewBrandNotification(brandName, normalizedEmail);
     res.json({ message: "Brand registered, awaiting admin approval" });
-  });
+  } catch (err) {
+    console.error("Brand Register Error:", err);
+    return res.status(400).json({ message: "Registration failed. Please try again." });
+  }
 });
 
 module.exports = router;
