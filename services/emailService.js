@@ -7,9 +7,10 @@ const nodemailer = require("nodemailer");
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
+  family: 4, // Force IPv4 — Railway IPv6 issue fix
   auth: {
-    user: process.env.EMAIL_FROM,           // khareedlo26@gmail.com
-    pass: process.env.EMAIL_APP_PASSWORD,   // 16-digit app password
+    user: process.env.EMAIL_FROM,
+    pass: process.env.EMAIL_APP_PASSWORD,
   },
 });
 
