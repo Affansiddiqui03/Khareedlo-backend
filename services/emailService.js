@@ -6,8 +6,10 @@
 const nodemailer = require("nodemailer");
 
 const transporter = nodemailer.createTransport({
-  service: "gmail",
-  family: 4, // Force IPv4 — Railway IPv6 issue fix
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true, // SSL
+  family: 4,    // Force IPv4
   auth: {
     user: process.env.EMAIL_FROM,
     pass: process.env.EMAIL_APP_PASSWORD,
