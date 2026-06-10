@@ -3,6 +3,7 @@
 const express = require("express");
 const router  = express.Router();
 const db      = require("../config/db");
+const { sendBrandApprovalEmail, sendBrandRejectionEmail } = require("../services/emailService");
 const path    = require("path");
 const fs      = require("fs");
 
@@ -54,6 +55,19 @@ router.put("/brands/:id", (req, res) => {
 
   db.query("UPDATE brands SET status = ? WHERE brand_id = ?", [status, req.params.id], (err) => {
     if (err) return res.status(500).json(err);
+
+    // Fetch brand details to send email
+    db.query("SELECT brand_name, email FROM brands WHERE brand_id = ?", [req.params.id], (err2, rows) => {
+      if (!err2 && rows.length > 0) {
+        const { brand_name, email } = rows[0];
+        if (status === "APPROVED") {
+          sendBrandApprovalEmail(brand_name, email);
+        } else if (status === "REJECTED") {
+          sendBrandRejectionEmail(brand_name, email);
+        }
+      }
+    });
+
     res.json({ success: true, message: `Brand ${status.toLowerCase()}`, brand_id: req.params.id, status });
   });
 });

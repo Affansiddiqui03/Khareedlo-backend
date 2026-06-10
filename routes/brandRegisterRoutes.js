@@ -2,6 +2,7 @@ const express  = require("express");
 const router   = express.Router();
 const db       = require("../config/db");
 const { uploadLogo } = require("../config/cloudinary");
+const { sendAdminNewBrandNotification } = require("../services/emailService");
 
 // ── Email Validator (TLD whitelist) ──────────────────────────
 const VALID_TLDS = new Set([
@@ -63,6 +64,8 @@ router.post("/register", uploadLogo.single("logo"), (req, res) => {
       console.error("Brand Register Error:", err);
       return res.status(400).json({ message: "Brand already exists or DB error" });
     }
+    // Send email notification to admin (non-blocking)
+    sendAdminNewBrandNotification(brandName, email);
     res.json({ message: "Brand registered, awaiting admin approval" });
   });
 });
