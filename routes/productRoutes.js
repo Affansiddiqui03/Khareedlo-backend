@@ -17,10 +17,14 @@ router.get("/", (req, res) => {
       p.product_name AS title,
       p.price,
       p.gender       AS category,
+      p.gender,
       p.image,
       p.brand_id,
       p.buy_now_link,
+      p.avg_rating,
+      p.rating_count,
       b.brand_name   AS brand,
+      b.brand_name   AS brand_name,
       b.website      AS brand_website
     FROM products p
     JOIN brands b ON p.brand_id = b.brand_id
