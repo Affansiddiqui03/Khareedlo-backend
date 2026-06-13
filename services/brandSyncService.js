@@ -2,7 +2,7 @@
 // REAL Pull integration — Loyverse (Alkaram) + Square (Limelight)
 // Tokens are already in .env — this does REAL API calls
 
-const db    = require("../config/db");
+const db = require("../config/db");
 const https = require("https");
 
 function apiGet(hostname, path, headers) {
@@ -30,16 +30,16 @@ async function saveSyncLog(brandId, brandName, status, counts, durationS) {
       `INSERT INTO sync_logs (brand_id, brand_name, status, message, synced_at)
        VALUES (?, ?, ?, ?, NOW())`,
       [brandId, brandName, status,
-       JSON.stringify({ ...counts, duration_s: durationS })]
+        JSON.stringify({ ...counts, duration_s: durationS })]
     );
   } catch (e) { console.error("[SyncLog]", e.message); }
 }
 
 // ── ALKARAM — Loyverse Pull ───────────────────────────────────
 async function syncAlkaram() {
-  const t0      = Date.now();
-  const token   = process.env.LOYVERSE_TOKEN;
-  const BRAND   = 3;
+  const t0 = Date.now();
+  const token = process.env.LOYVERSE_TOKEN;
+  const BRAND = 3;
 
   if (!token) throw new Error("LOYVERSE_TOKEN not set in .env");
 
@@ -56,14 +56,14 @@ async function syncAlkaram() {
   let inserted = 0, updated = 0, outOfStock = 0;
 
   for (const item of items) {
-    const name    = (item.item_name || "").trim();
+    const name = (item.item_name || "").trim();
     if (!name) continue;
 
-    const variant  = item.variants?.[0];
-    const price    = parseFloat(variant?.price || 0);
-    const inStock  = (variant?.inventory_levels?.[0]?.in_stock ?? 1) > 0;
-    const image    = item.image_url || null;
-    const status   = "PENDING"; // Admin will review pulled products before they go live
+    const variant = item.variants?.[0];
+    const price = parseFloat(variant?.price || 0);
+    const inStock = (variant?.inventory_levels?.[0]?.in_stock ?? 1) > 0;
+    const image = item.image_url || null;
+    const status = "PENDING"; // Admin will review pulled products before they go live
 
     if (!inStock) outOfStock++;
 
@@ -75,11 +75,11 @@ async function syncAlkaram() {
     if (ex.length === 0) {
       await db.promise().execute(
         `INSERT INTO products
-         (brand_id, product_name, price, gender, status, category_id, image, buy_now_link, website_link, created_at)
-         VALUES (?, ?, ?, 'Women', ?, 2, ?, ?, ?, NOW())`,
+ (brand_id, product_name, price, gender, status, category_id, image, buy_now_link, website_link)
+ VALUES (?, ?, ?, 'Women', ?, 2, ?, ?, ?)`,
         [BRAND, name, price, status, image,
-         "https://www.alkaramstudio.com/collections/all", // default — admin can update later
-         "https://www.alkaramstudio.com"]
+          "https://www.alkaramstudio.com/collections/all", // default — admin can update later
+          "https://www.alkaramstudio.com"]
       );
       inserted++;
     } else {
@@ -107,7 +107,7 @@ async function syncAlkaram() {
 
 // ── LIMELIGHT — Square Catalog Pull ──────────────────────────
 async function syncLimelight() {
-  const t0    = Date.now();
+  const t0 = Date.now();
   const token = process.env.SQUARE_ACCESS_TOKEN;
   const BRAND = 4;
 
@@ -117,7 +117,7 @@ async function syncLimelight() {
     "connect.squareupsandbox.com",
     "/v2/catalog/list?types=ITEM",
     {
-      Authorization:    `Bearer ${token}`,
+      Authorization: `Bearer ${token}`,
       "Square-Version": "2024-01-17",
     }
   );
@@ -130,7 +130,7 @@ async function syncLimelight() {
 
   for (const obj of objects) {
     if (obj.type !== "ITEM") continue;
-    const name  = (obj.item_data?.name || "").trim();
+    const name = (obj.item_data?.name || "").trim();
     if (!name) continue;
 
     const priceMoney = obj.item_data?.variations?.[0]
@@ -146,11 +146,11 @@ async function syncLimelight() {
     if (ex.length === 0) {
       await db.promise().execute(
         `INSERT INTO products
-         (brand_id, product_name, price, gender, status, category_id, buy_now_link, website_link, created_at)
-         VALUES (?, ?, ?, 'Women', 'APPROVED', 2, ?, ?, NOW())`,
+ (brand_id, product_name, price, gender, status, category_id, buy_now_link, website_link)
+ VALUES (?, ?, ?, 'Women', 'APPROVED', 2, ?, ?)`,
         [BRAND, name, price,
-         "https://www.lime-light.com/collections/all",
-         "https://www.lime-light.com"]
+          "https://www.lime-light.com/collections/all",
+          "https://www.lime-light.com"]
       );
       inserted++;
     } else {
@@ -190,9 +190,9 @@ async function syncZellbury() {
 
 // ── DISPATCHER ────────────────────────────────────────────────
 const BRAND_CONFIG = {
-  alkaram:   { label: "Alkaram Studio", fn: syncAlkaram   },
-  limelight: { label: "Limelight",      fn: syncLimelight },
-  zellbury:  { label: "Zellbury",       fn: syncZellbury  },
+  alkaram: { label: "Alkaram Studio", fn: syncAlkaram },
+  limelight: { label: "Limelight", fn: syncLimelight },
+  zellbury: { label: "Zellbury", fn: syncZellbury },
 };
 
 async function syncBrand(slug) {
@@ -204,7 +204,7 @@ async function syncBrand(slug) {
 async function syncAllBrands() {
   const out = [];
   for (const cfg of Object.values(BRAND_CONFIG)) {
-    try   { out.push(await cfg.fn()); }
+    try { out.push(await cfg.fn()); }
     catch (e) { out.push({ brand: cfg.label, error: e.message }); }
   }
   return out;
