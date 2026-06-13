@@ -179,4 +179,46 @@ router.get("/pos/summary/:brandId", (req, res) => {
   });
 });
 
+// ── EDIT PRODUCT (brand edits image/link/category, goes back to PENDING) ──────
+router.patch("/products/:productId", uploadProduct.single("image"), (req, res) => {
+  const { productId } = req.params;
+  const { product_name, price, category_id, sub_category_id, gender, buy_now_link, website_link, brand_id } = req.body;
+
+  // First verify this product belongs to this brand (security check)
+  db.query("SELECT * FROM products WHERE product_id = ? AND brand_id = ?", [productId, brand_id], (err, rows) => {
+    if (err) return res.status(500).json({ message: "DB error" });
+    if (!rows.length) return res.status(403).json({ message: "Product not found or not yours" });
+
+    const imagePath = req.file ? req.file.path : rows[0].image; // keep old image if no new upload
+
+    const fields = {
+      product_name:    product_name?.trim()    || rows[0].product_name,
+      price:           price                   || rows[0].price,
+      category_id:     category_id             || rows[0].category_id,
+      sub_category_id: sub_category_id         || rows[0].sub_category_id,
+      gender:          gender                  || rows[0].gender,
+      buy_now_link:    buy_now_link?.trim()    || rows[0].buy_now_link,
+      website_link:    website_link?.trim()    || rows[0].website_link,
+      image:           imagePath,
+      status:          "PENDING", // always reset to PENDING so admin re-approves
+    };
+
+    db.query(
+      `UPDATE products SET
+         product_name=?, price=?, category_id=?, sub_category_id=?,
+         gender=?, buy_now_link=?, website_link=?, image=?, status=?
+       WHERE product_id=?`,
+      [
+        fields.product_name, fields.price, fields.category_id, fields.sub_category_id,
+        fields.gender, fields.buy_now_link, fields.website_link, fields.image, fields.status,
+        productId,
+      ],
+      (err2) => {
+        if (err2) { console.error("Edit product error:", err2); return res.status(500).json({ message: "Update failed" }); }
+        res.json({ success: true, status: "PENDING", message: "Product updated. Admin will re-approve before going live." });
+      }
+    );
+  });
+});
+
 module.exports = router;

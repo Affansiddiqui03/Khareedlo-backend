@@ -1,213 +1,260 @@
-// brandSyncService.js
-// REAL Pull integration — Loyverse (Alkaram) + Square (Limelight)
-// Tokens are already in .env — this does REAL API calls
+// Khareedlo Backend/services/brandSyncService.js
+// Real POS Pull Sync — Loyverse (Alkaram brand_id=3) + Square (Limelight brand_id=4)
+// FIX 1: Price fallback for "Variable" items — uses first variant price
+// FIX 2: Duplicate prevention — checks by (brand_id + product_name) before INSERT
+// FIX 3: Only NEW items from POS are pulled — order confirmations (PUSH) don't re-sync
 
-const db = require("../config/db");
-const https = require("https");
+const db     = require("../config/db");
+const https  = require("https");
 
-function apiGet(hostname, path, headers) {
+// ── Generic HTTPS helper ─────────────────────────────────────
+function apiRequest(hostname, path, method, headers, body) {
   return new Promise((resolve, reject) => {
-    const req = https.request(
-      { hostname, path, method: "GET", headers, timeout: 15000 },
-      (res) => {
-        let data = "";
-        res.on("data", c => { data += c; });
-        res.on("end", () => {
-          try { resolve({ status: res.statusCode, data: JSON.parse(data) }); }
-          catch { resolve({ status: res.statusCode, data }); }
-        });
-      }
-    );
-    req.on("error", reject);
-    req.on("timeout", () => { req.destroy(); reject(new Error("Timeout")); });
+    const bodyStr = body ? JSON.stringify(body) : null;
+    const opts = {
+      hostname, path, method,
+      headers: {
+        ...headers,
+        ...(bodyStr ? { "Content-Length": Buffer.byteLength(bodyStr) } : {}),
+      },
+      timeout: 20000,
+    };
+    const req = https.request(opts, (res) => {
+      let data = "";
+      res.on("data", c => { data += c; });
+      res.on("end", () => {
+        try { resolve({ status: res.statusCode, data: JSON.parse(data) }); }
+        catch { resolve({ status: res.statusCode, data }); }
+      });
+    });
+    req.on("error",   reject);
+    req.on("timeout", () => { req.destroy(); reject(new Error("Request timeout")); });
+    if (bodyStr) req.write(bodyStr);
     req.end();
   });
 }
 
-async function saveSyncLog(brandId, brandName, status, counts, durationS) {
-  try {
-    await db.promise().execute(
-      `INSERT INTO sync_logs (brand_id, brand_name, status, message, synced_at)
-       VALUES (?, ?, ?, ?, NOW())`,
-      [brandId, brandName, status,
-        JSON.stringify({ ...counts, duration_s: durationS })]
-    );
-  } catch (e) { console.error("[SyncLog]", e.message); }
+// ── Price helper: handles Variable pricing ───────────────────
+function resolvePrice(item) {
+  if (!item) return 0;
+
+  // Direct price on item (some Loyverse items)
+  if (item.price && Number(item.price) > 0) return Number(item.price);
+
+  // Loyverse: variants array
+  if (Array.isArray(item.variants) && item.variants.length > 0) {
+    for (const v of item.variants) {
+      const p = Number(v.price || v.default_price || 0);
+      if (p > 0) return p;
+    }
+  }
+
+  // Square: item_data.variations
+  if (item.item_data?.variations) {
+    for (const v of item.item_data.variations) {
+      const amt = v.item_variation_data?.price_money?.amount;
+      if (amt && amt > 0) {
+        // Square stores amounts in smallest unit (pence/cents) — PKR is no-decimal
+        return Math.round(amt / 100);
+      }
+    }
+  }
+
+  return 0;
 }
 
-// ── ALKARAM — Loyverse Pull ───────────────────────────────────
+// ── Check if product already exists (prevent duplicate pull) ─
+async function productExists(brandId, productName) {
+  const [rows] = await db.promise().execute(
+    "SELECT product_id FROM products WHERE brand_id = ? AND product_name = ? LIMIT 1",
+    [brandId, productName.trim()]
+  );
+  return rows.length > 0;
+}
+
+// ════════════════════════════════════════════════════════════
+//  LOYVERSE — Alkaram (brand_id = 3)
+// ════════════════════════════════════════════════════════════
 async function syncAlkaram() {
-  const t0 = Date.now();
-  const token = process.env.LOYVERSE_TOKEN;
-  const BRAND = 3;
+  const token   = process.env.LOYVERSE_TOKEN;
+  const brandId = 3;
 
-  if (!token) throw new Error("LOYVERSE_TOKEN not set in .env");
+  if (!token || token === "your_loyverse_token") {
+    console.warn("[Sync/Alkaram] LOYVERSE_TOKEN not set");
+    return { brand: "Alkaram", inserted: 0, skipped: 0, error: "LOYVERSE_TOKEN not configured in Railway env" };
+  }
 
-  const result = await apiGet(
+  console.log("[Sync/Alkaram] Fetching items from Loyverse...");
+
+  const result = await apiRequest(
     "api.loyverse.com",
     "/v1.0/items?limit=250",
-    { Authorization: `Bearer ${token}` }
+    "GET",
+    { "Authorization": `Bearer ${token}` },
+    null
   );
 
-  if (result.status !== 200)
-    throw new Error(`Loyverse API returned ${result.status}`);
+  if (result.status !== 200) {
+    throw new Error(`Loyverse API error: ${result.status} — ${JSON.stringify(result.data)}`);
+  }
 
-  const items = result.data?.items || [];
-  let inserted = 0, updated = 0, outOfStock = 0;
+  const items    = result.data?.items || [];
+  let inserted   = 0;
+  let skipped    = 0;
+
+  console.log(`[Sync/Alkaram] Got ${items.length} items from Loyverse`);
 
   for (const item of items) {
-    const name = (item.item_name || "").trim();
-    if (!name) continue;
+    const name  = (item.item_name || "").trim();
+    if (!name) { skipped++; continue; }
 
-    const variant = item.variants?.[0];
-    const price = parseFloat(variant?.price || 0);
-    const inStock = (variant?.inventory_levels?.[0]?.in_stock ?? 1) > 0;
+    const price = resolvePrice(item);
     const image = item.image_url || null;
-    const status = "PENDING"; // Admin will review pulled products before they go live
 
-    if (!inStock) outOfStock++;
+    // Skip if already in DB (prevents re-pulling products that were already synced or order-confirmed)
+    const exists = await productExists(brandId, name);
+    if (exists) {
+      console.log(`[Sync/Alkaram] Skip existing: "${name}"`);
+      skipped++;
+      continue;
+    }
 
-    const [ex] = await db.promise().execute(
-      "SELECT product_id FROM products WHERE product_name=? AND brand_id=?",
-      [name, BRAND]
+    // Insert as PENDING — brand will edit image/category, admin will approve
+    await db.promise().execute(
+      `INSERT INTO products
+         (brand_id, product_name, price, gender, status, category_id, sub_category_id, image, buy_now_link, website_link)
+       VALUES (?, ?, ?, 'Women', 'PENDING', 2, 5, ?, '', '')`,
+      [brandId, name, price, image]
     );
 
-    if (ex.length === 0) {
-      await db.promise().execute(
-        `INSERT INTO products
- (brand_id, product_name, price, gender, status, category_id, image, buy_now_link, website_link)
- VALUES (?, ?, ?, 'Women', ?, 2, ?, ?, ?)`,
-        [BRAND, name, price, status, image,
-          "https://www.alkaramstudio.com/collections/all", // default — admin can update later
-          "https://www.alkaramstudio.com"]
-      );
-      inserted++;
-    } else {
-      await db.promise().execute(
-        `UPDATE products SET price=?, status=?
-         ${image ? ", image=?" : ""}
-         WHERE product_name=? AND brand_id=?`,
-        image
-          ? [price, status, image, name, BRAND]
-          : [price, status, name, BRAND]
-      );
-      updated++;
-    }
+    console.log(`[Sync/Alkaram] Inserted: "${name}" @ PKR ${price}`);
+    inserted++;
   }
 
-  const dur = ((Date.now() - t0) / 1000).toFixed(1);
-  const counts = { inserted, updated, out_of_stock: outOfStock };
-  await saveSyncLog(BRAND, "Alkaram Studio", "success", counts, dur);
-
-  return {
-    brand: "Alkaram Studio", total: items.length,
-    ...counts, duration_s: dur, source: "Loyverse (live)",
-  };
+  return { brand: "Alkaram", inserted, skipped, total: items.length };
 }
 
-// ── LIMELIGHT — Square Catalog Pull ──────────────────────────
+// ════════════════════════════════════════════════════════════
+//  SQUARE — Limelight (brand_id = 4)
+// ════════════════════════════════════════════════════════════
 async function syncLimelight() {
-  const t0 = Date.now();
-  const token = process.env.SQUARE_ACCESS_TOKEN;
-  const BRAND = 4;
+  const token    = process.env.SQUARE_ACCESS_TOKEN;
+  const brandId  = 4;
 
-  if (!token) throw new Error("SQUARE_ACCESS_TOKEN not set in .env");
+  if (!token || token === "your_square_token") {
+    console.warn("[Sync/Limelight] SQUARE_ACCESS_TOKEN not set");
+    return { brand: "Limelight", inserted: 0, skipped: 0, error: "SQUARE_ACCESS_TOKEN not configured in Railway env" };
+  }
 
-  const result = await apiGet(
-    "connect.squareupsandbox.com",
+  console.log("[Sync/Limelight] Fetching catalog from Square...");
+
+  // Square sandbox
+  const hostname = token.startsWith("EAAAE") ? "connect.squareupsandbox.com" : "connect.squareup.com";
+
+  const result = await apiRequest(
+    hostname,
     "/v2/catalog/list?types=ITEM",
+    "GET",
     {
-      Authorization: `Bearer ${token}`,
+      "Authorization":  `Bearer ${token}`,
       "Square-Version": "2024-01-17",
-    }
+    },
+    null
   );
 
-  if (result.status !== 200)
-    throw new Error(`Square API returned ${result.status}`);
+  if (result.status !== 200) {
+    throw new Error(`Square API error: ${result.status} — ${JSON.stringify(result.data)}`);
+  }
 
-  const objects = result.data?.objects || [];
-  let inserted = 0, updated = 0;
+  const objects  = result.data?.objects || [];
+  let inserted   = 0;
+  let skipped    = 0;
+
+  console.log(`[Sync/Limelight] Got ${objects.length} objects from Square`);
 
   for (const obj of objects) {
-    if (obj.type !== "ITEM") continue;
-    const name = (obj.item_data?.name || "").trim();
-    if (!name) continue;
+    if (obj.type !== "ITEM") { skipped++; continue; }
 
-    const priceMoney = obj.item_data?.variations?.[0]
-      ?.item_variation_data?.price_money?.amount || 0;
-    const price = priceMoney / 100; // Square stores cents
-    const image = obj.item_data?.image_ids ? null : null; // images need separate call
+    const name  = (obj.item_data?.name || "").trim();
+    if (!name) { skipped++; continue; }
 
-    const [ex] = await db.promise().execute(
-      "SELECT product_id FROM products WHERE product_name=? AND brand_id=?",
-      [name, BRAND]
+    const price = resolvePrice(obj);
+    const image = obj.item_data?.image_ids?.[0] ? null : null; // Square images need separate call, skip for now
+
+    const exists = await productExists(brandId, name);
+    if (exists) {
+      console.log(`[Sync/Limelight] Skip existing: "${name}"`);
+      skipped++;
+      continue;
+    }
+
+    await db.promise().execute(
+      `INSERT INTO products
+         (brand_id, product_name, price, gender, status, category_id, sub_category_id, image, buy_now_link, website_link)
+       VALUES (?, ?, ?, 'Women', 'PENDING', 2, 5, ?, '', '')`,
+      [brandId, name, price, image]
     );
 
-    if (ex.length === 0) {
-      await db.promise().execute(
-        `INSERT INTO products
- (brand_id, product_name, price, gender, status, category_id, buy_now_link, website_link)
- VALUES (?, ?, ?, 'Women', 'APPROVED', 2, ?, ?)`,
-        [BRAND, name, price,
-          "https://www.lime-light.com/collections/all",
-          "https://www.lime-light.com"]
-      );
-      inserted++;
-    } else {
-      await db.promise().execute(
-        "UPDATE products SET price=? WHERE product_name=? AND brand_id=?",
-        [price, name, BRAND]
-      );
-      updated++;
-    }
+    console.log(`[Sync/Limelight] Inserted: "${name}" @ PKR ${price}`);
+    inserted++;
   }
 
-  const dur = ((Date.now() - t0) / 1000).toFixed(1);
-  const counts = { inserted, updated, out_of_stock: 0 };
-  await saveSyncLog(BRAND, "Limelight", "success", counts, dur);
-
-  return {
-    brand: "Limelight", total: objects.length,
-    ...counts, duration_s: dur, source: "Square Sandbox (live)",
-  };
+  return { brand: "Limelight", inserted, skipped, total: objects.length };
 }
 
-// ── ZELLBURY — No POS API ─────────────────────────────────────
-async function syncZellbury() {
-  const t0 = Date.now();
-  const [rows] = await db.promise().execute(
-    "SELECT COUNT(*) as cnt FROM products WHERE brand_id=2 AND status='APPROVED'"
-  );
-  const dur = ((Date.now() - t0) / 1000).toFixed(1);
-  const counts = { inserted: 0, updated: rows[0].cnt, out_of_stock: 0 };
-  await saveSyncLog(2, "Zellbury", "success", counts, dur);
-  return {
-    brand: "Zellbury", total: rows[0].cnt,
-    ...counts, duration_s: dur,
-    source: "Manual (no POS API — Zellbury uses proprietary system)",
-  };
-}
-
-// ── DISPATCHER ────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════
+//  BRAND CONFIG (used by syncRoutes.js for validation)
+// ════════════════════════════════════════════════════════════
 const BRAND_CONFIG = {
-  alkaram: { label: "Alkaram Studio", fn: syncAlkaram },
-  limelight: { label: "Limelight", fn: syncLimelight },
-  zellbury: { label: "Zellbury", fn: syncZellbury },
+  alkaram:   { brand_id: 3, label: "Alkaram Studio" },
+  limelight: { brand_id: 4, label: "Limelight"      },
 };
 
-async function syncBrand(slug) {
-  const cfg = BRAND_CONFIG[slug];
-  if (!cfg) throw new Error(`Unknown brand: ${slug}`);
-  return cfg.fn();
+async function syncBrand(brandSlug) {
+  const t0 = Date.now();
+  let result;
+
+  if (brandSlug === "alkaram")   result = await syncAlkaram();
+  else if (brandSlug === "limelight") result = await syncLimelight();
+  else return { brand: brandSlug, inserted: 0, error: "Unknown brand slug" };
+
+  result.duration_s  = ((Date.now() - t0) / 1000).toFixed(1);
+  result.synced_at   = new Date().toISOString();
+
+  // Log to sync_logs if table exists (non-fatal if not)
+  try {
+    const brandId = BRAND_CONFIG[brandSlug]?.brand_id;
+    if (brandId) {
+      await db.promise().execute(
+        `INSERT INTO sync_logs (brand_id, inserted, skipped, duration_s, synced_at)
+         VALUES (?, ?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE inserted=VALUES(inserted), skipped=VALUES(skipped), duration_s=VALUES(duration_s), synced_at=NOW()`,
+        [brandId, result.inserted || 0, result.skipped || 0, parseFloat(result.duration_s)]
+      ).catch(() => {
+        // sync_logs table may not have ON DUPLICATE — try plain INSERT
+        return db.promise().execute(
+          `INSERT INTO sync_logs (brand_id, inserted, skipped, duration_s, synced_at) VALUES (?, ?, ?, ?, NOW())`,
+          [brandId, result.inserted || 0, result.skipped || 0, parseFloat(result.duration_s)]
+        ).catch(() => {}); // table might not exist — non-fatal
+      });
+    }
+  } catch (e) {
+    console.warn("[SyncLog] Could not write to sync_logs:", e.message);
+  }
+
+  return result;
 }
 
 async function syncAllBrands() {
-  const out = [];
-  for (const cfg of Object.values(BRAND_CONFIG)) {
-    try { out.push(await cfg.fn()); }
-    catch (e) { out.push({ brand: cfg.label, error: e.message }); }
+  const results = [];
+  for (const slug of Object.keys(BRAND_CONFIG)) {
+    try {
+      results.push(await syncBrand(slug));
+    } catch (err) {
+      results.push({ brand: slug, inserted: 0, error: err.message });
+    }
   }
-  return out;
+  return results;
 }
 
 module.exports = { syncBrand, syncAllBrands, BRAND_CONFIG };
