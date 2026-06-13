@@ -3,7 +3,7 @@
 const express = require("express");
 const router  = express.Router();
 const db      = require("../config/db");
-const { sendBrandApprovalEmail, sendBrandRejectionEmail } = require("../services/emailService");
+const { sendBrandApprovalEmail, sendBrandRejectionEmail, sendProductApprovalEmail, sendProductRejectionEmail } = require("../services/emailService");
 const path    = require("path");
 const fs      = require("fs");
 
@@ -185,6 +185,22 @@ router.put("/products/:id", (req, res) => {
 
   db.query("UPDATE products SET status = ? WHERE product_id = ?", [status, req.params.id], (err) => {
     if (err) return res.status(500).json(err);
+
+    // Send email to brand
+    db.query(
+      `SELECT p.product_name, b.brand_name, b.email
+       FROM products p JOIN brands b ON p.brand_id = b.brand_id
+       WHERE p.product_id = ?`,
+      [req.params.id],
+      (err2, rows) => {
+        if (!err2 && rows.length) {
+          const { product_name, brand_name, email } = rows[0];
+          if (status === "APPROVED") sendProductApprovalEmail(brand_name, email, product_name);
+          if (status === "REJECTED") sendProductRejectionEmail(brand_name, email, product_name);
+        }
+      }
+    );
+
     res.json({ success: true, product_id: req.params.id, status });
   });
 });
@@ -197,6 +213,22 @@ router.put("/products/:id/status", (req, res) => {
   }
   db.query("UPDATE products SET status = ? WHERE product_id = ?", [status, req.params.id], (err) => {
     if (err) return res.status(500).json(err);
+
+    // Send email to brand
+    db.query(
+      `SELECT p.product_name, b.brand_name, b.email
+       FROM products p JOIN brands b ON p.brand_id = b.brand_id
+       WHERE p.product_id = ?`,
+      [req.params.id],
+      (err2, rows) => {
+        if (!err2 && rows.length) {
+          const { product_name, brand_name, email } = rows[0];
+          if (status === "APPROVED") sendProductApprovalEmail(brand_name, email, product_name);
+          if (status === "REJECTED") sendProductRejectionEmail(brand_name, email, product_name);
+        }
+      }
+    );
+
     res.json({ success: true, product_id: req.params.id, status });
   });
 });

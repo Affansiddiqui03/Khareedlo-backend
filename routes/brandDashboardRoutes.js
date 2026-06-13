@@ -3,6 +3,7 @@ const express = require("express");
 const router  = express.Router();
 const db      = require("../config/db");
 const { uploadProduct } = require("../config/cloudinary");
+const { sendAdminNewProductNotification } = require("../services/emailService");
 
 // ── PKT timezone helper (UTC+5) ───────────────────────────────
 function toPKTDateStr(date) {
@@ -104,6 +105,14 @@ router.post("/add-product", uploadProduct.single("image"), (req, res) => {
     [brand_id, product_name, price, category_id || 1, sub_category_id || 1, gender || "Women", imagePath, buy_now_link || null, website_link || null],
     (err, result) => {
       if (err) { console.error("Add product error:", err); return res.status(500).json({ message: "Failed to add product" }); }
+
+      // Notify admin about new pending product
+      db.query("SELECT brand_name FROM brands WHERE brand_id = ?", [brand_id], (err2, rows) => {
+        if (!err2 && rows.length) {
+          sendAdminNewProductNotification(rows[0].brand_name, product_name).catch(() => {});
+        }
+      });
+
       res.json({ success: true, product_id: result.insertId, status: "PENDING" });
     }
   );
