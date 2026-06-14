@@ -188,6 +188,36 @@ router.get("/pos/summary/:brandId", (req, res) => {
   });
 });
 
+// ── HIDE / SHOW product — MUST be before /products/:productId PATCH ──
+router.patch("/products/:productId/visibility", (req, res) => {
+  const { productId } = req.params;
+  const { brand_id, action } = req.body;
+
+  if (!["hide", "show"].includes(action)) {
+    return res.status(400).json({ message: "action must be 'hide' or 'show'" });
+  }
+
+  db.query("SELECT status FROM products WHERE product_id = ? AND brand_id = ?", [productId, brand_id], (err, rows) => {
+    if (err || !rows.length) return res.status(403).json({ message: "Product not found or not yours" });
+
+    const currentStatus = rows[0].status;
+
+    if (action === "hide") {
+      if (currentStatus !== "APPROVED") return res.status(400).json({ message: "Only Live products can be hidden" });
+      db.query("UPDATE products SET status = 'HIDDEN' WHERE product_id = ?", [productId], (err2) => {
+        if (err2) return res.status(500).json({ message: "Failed to hide" });
+        res.json({ success: true, status: "HIDDEN", message: "Product hidden from platform." });
+      });
+    } else {
+      if (currentStatus !== "HIDDEN") return res.status(400).json({ message: "Only hidden products can be shown again" });
+      db.query("UPDATE products SET status = 'APPROVED' WHERE product_id = ?", [productId], (err2) => {
+        if (err2) return res.status(500).json({ message: "Failed to show" });
+        res.json({ success: true, status: "APPROVED", message: "Product is live again." });
+      });
+    }
+  });
+});
+
 // ── EDIT PRODUCT (brand edits image/link/category, goes back to PENDING) ──────
 router.patch("/products/:productId", uploadProduct.single("image"), (req, res) => {
   const { productId } = req.params;

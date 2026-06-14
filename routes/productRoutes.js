@@ -23,11 +23,15 @@ router.get("/", (req, res) => {
       p.buy_now_link,
       p.avg_rating,
       p.rating_count,
+      p.sub_category_id,
+      p.trending_score AS score,
+      c.category_name,
       b.brand_name   AS brand,
       b.brand_name   AS brand_name,
       b.website      AS brand_website
     FROM products p
     JOIN brands b ON p.brand_id = b.brand_id
+    LEFT JOIN categories c ON p.category_id = c.category_id
     WHERE ${APPROVED_ONLY}
     ORDER BY p.product_id DESC
   `;
