@@ -23,15 +23,11 @@ router.get("/", (req, res) => {
       p.buy_now_link,
       p.avg_rating,
       p.rating_count,
-      p.sub_category_id,
-      p.trending_score AS score,
-      c.category_name,
       b.brand_name   AS brand,
       b.brand_name   AS brand_name,
       b.website      AS brand_website
     FROM products p
     JOIN brands b ON p.brand_id = b.brand_id
-    LEFT JOIN categories c ON p.category_id = c.category_id
     WHERE ${APPROVED_ONLY}
     ORDER BY p.product_id DESC
   `;
@@ -44,7 +40,6 @@ router.get("/", (req, res) => {
       image: row.image && row.image !== "photos/" && row.image !== ""
         ? row.image
         : resolveProductImage(row.product_name),
-      // Use product-specific link, fallback to brand website
       buy_now_link: row.buy_now_link || row.brand_website || null,
     }));
 
@@ -54,7 +49,6 @@ router.get("/", (req, res) => {
 
 // ── BRAND ROUTES (must come before /:id) ─────────────────────
 
-// All products for a brand
 router.get("/brand/:brandId", (req, res) => {
   const sql = `
     SELECT
@@ -91,7 +85,6 @@ router.get("/brand/:brandId", (req, res) => {
   });
 });
 
-// SEO endpoint
 router.get("/brand/:brandId/seo", (req, res) => {
   const sql = `
     SELECT
@@ -127,7 +120,6 @@ router.get("/brand/:brandId/seo", (req, res) => {
   });
 });
 
-// Filter by category/sub
 router.get("/brand/:brandId/filter", (req, res) => {
   const { category, sub } = req.query;
 
@@ -167,7 +159,6 @@ router.get("/brand/:brandId/filter", (req, res) => {
   });
 });
 
-// Categories
 router.get("/brand/:brandId/categories", (req, res) => {
   const sql = `
     SELECT DISTINCT c.category_id, c.category_name
@@ -182,7 +173,6 @@ router.get("/brand/:brandId/categories", (req, res) => {
   });
 });
 
-// Subcategories
 router.get("/brand/:brandId/subcategories/:categoryId", (req, res) => {
   const sql = `
     SELECT DISTINCT s.sub_category_id, s.sub_category_name
@@ -226,7 +216,6 @@ router.get("/:id", (req, res) => {
       image: row.image && row.image !== "photos/" && row.image !== ""
         ? row.image
         : resolveProductImage(row.product_name),
-      // Prefer specific product link, fallback to brand website
       buy_now_link: row.buy_now_link || row.brand_website || null,
     };
 
