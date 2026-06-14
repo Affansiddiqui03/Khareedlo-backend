@@ -197,19 +197,19 @@ router.patch("/products/:productId/visibility", (req, res) => {
     return res.status(400).json({ message: "action must be 'hide' or 'show'" });
   }
 
-  db.query("SELECT status FROM products WHERE product_id = ? AND brand_id = ?", [productId, brand_id], (err, rows) => {
-    if (err || !rows.length) return res.status(403).json({ message: "Product not found or not yours" });
+  db.query("SELECT status FROM products WHERE product_id = ?", [productId], (err, rows) => {
+    if (err || !rows.length) return res.status(404).json({ message: "Product not found" });
 
-    const currentStatus = rows[0].status;
+    const currentStatus = (rows[0].status || "").toUpperCase();
 
     if (action === "hide") {
-      if (currentStatus !== "APPROVED") return res.status(400).json({ message: "Only Live products can be hidden" });
+      if (currentStatus !== "APPROVED") return res.status(400).json({ message: `Cannot hide product with status: ${rows[0].status}` });
       db.query("UPDATE products SET status = 'HIDDEN' WHERE product_id = ?", [productId], (err2) => {
         if (err2) return res.status(500).json({ message: "Failed to hide" });
         res.json({ success: true, status: "HIDDEN", message: "Product hidden from platform." });
       });
     } else {
-      if (currentStatus !== "HIDDEN") return res.status(400).json({ message: "Only hidden products can be shown again" });
+      if (currentStatus !== "HIDDEN") return res.status(400).json({ message: `Cannot show product with status: ${rows[0].status}` });
       db.query("UPDATE products SET status = 'APPROVED' WHERE product_id = ?", [productId], (err2) => {
         if (err2) return res.status(500).json({ message: "Failed to show" });
         res.json({ success: true, status: "APPROVED", message: "Product is live again." });
