@@ -1,65 +1,113 @@
-const db = require("../config/db");
+const db     = require("../config/db");
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
+const jwt    = require("jsonwebtoken");
 
 const ADMIN_EMAIL = "khareedlo@gmail.com";
 
-exports.register = async (req, res) => {
+// ── REGISTER ──────────────────────────────────────────────────
+exports.register = (req, res) => {
   const { name, email, password } = req.body;
   const normalizedEmail = (email || "").trim().toLowerCase();
 
-  // Block admin email from being registered as a user
   if (normalizedEmail === ADMIN_EMAIL) {
     return res.status(400).json({ message: "This email address is not available for registration." });
   }
 
-  const [exists] = await db.query(
-    "SELECT user_id FROM users WHERE LOWER(email)=?",
-    [normalizedEmail]
-  );
+  // FIX: callback-based, no await
+  db.query("SELECT user_id FROM users WHERE LOWER(email)=?", [normalizedEmail], (err, rows) => {
+    if (err) {
+      console.error("Register DB error:", err);
+      return res.status(500).json({ message: "Server error. Please try again." });
+    }
 
-  if (exists.length) {
-    return res.status(400).json({ message: "This email is already registered. Please login or use a different email." });
-  }
+    if (rows.length) {
+      return res.status(400).json({ message: "This email is already registered. Please login." });
+    }
 
-  const hashed = await bcrypt.hash(password, 10);
+    bcrypt.hash(password, 12, (hashErr, hashed) => {
+      if (hashErr) return res.status(500).json({ message: "Server error. Please try again." });
 
-  await db.query(
-    "INSERT INTO users (name,email,password) VALUES (?,?,?)",
-    [name, normalizedEmail, hashed]
-  );
-
-  res.json({ message: "Account created successfully" });
+      db.query("INSERT INTO users (name,email,password) VALUES (?,?,?)", [name, normalizedEmail, hashed], (err2) => {
+        if (err2) {
+          console.error("Register insert error:", err2);
+          return res.status(500).json({ message: "Registration failed. Please try again." });
+        }
+        res.json({ message: "Account created successfully" });
+      });
+    });
+  });
 };
 
-exports.login = async (req, res) => {
+// ── LOGIN ─────────────────────────────────────────────────────
+exports.login = (req, res) => {
   const { email, password } = req.body;
   const normalizedEmail = (email || "").trim().toLowerCase();
 
-  const [rows] = await db.query(
-    "SELECT * FROM users WHERE LOWER(email)=?",
-    [normalizedEmail]
-  );
+  // Check users table
+  db.query("SELECT * FROM users WHERE LOWER(email)=?", [normalizedEmail], (err, userRows) => {
+    if (err) {
+      console.error("Login DB error:", err);
+      return res.status(500).json({ message: "Server error. Please try again." });
+    }
 
-  if (!rows.length) {
-    return res.status(401).json({ message: "Invalid credentials" });
-  }
+    if (userRows.length) {
+      const user = userRows[0];
+      bcrypt.compare(password, user.password, (cmpErr, match) => {
+        if (cmpErr || !match) return res.status(401).json({ message: "Invalid credentials" });
 
-  const user = rows[0];
-  const match = await bcrypt.compare(password, user.password);
+        const token = jwt.sign(
+          { id: user.user_id, role: user.role },
+          process.env.JWT_SECRET || "KHAREEDLO_SECRET",
+          { expiresIn: "1d" }
+        );
 
-  if (!match) {
-    return res.status(401).json({ message: "Invalid credentials" });
-  }
+        return res.json({
+          token,
+          user: { id: user.user_id, name: user.name, email: user.email, role: user.role },
+        });
+      });
+      return; // stop here — user found
+    }
 
-  const token = jwt.sign(
-    { id: user.user_id, role: user.role },
-    "KHAREEDLO_SECRET",
-    { expiresIn: "7d" }
-  );
+    // Not in users — check brands table
+    db.query("SELECT * FROM brands WHERE LOWER(email)=?", [normalizedEmail], (err2, brandRows) => {
+      if (err2) {
+        console.error("Brand login DB error:", err2);
+        return res.status(500).json({ message: "Server error. Please try again." });
+      }
 
-  res.json({
-    token,
-    user: { id: user.user_id, name: user.name, email: user.email, role: user.role }
+      if (!brandRows.length) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+
+      const brand = brandRows[0];
+
+      if (brand.status !== "APPROVED") {
+        return res.status(403).json({ message: "Your brand account is pending admin approval." });
+      }
+
+      bcrypt.compare(password, brand.password, (cmpErr2, match2) => {
+        if (cmpErr2 || !match2) return res.status(401).json({ message: "Invalid credentials" });
+
+        const token = jwt.sign(
+          { id: brand.brand_id, role: "brand" },
+          process.env.JWT_SECRET || "KHAREEDLO_SECRET",
+          { expiresIn: "1d" }
+        );
+
+        return res.json({
+          token,
+          user: {
+            id:        brand.brand_id,
+            name:      brand.brand_name,
+            email:     brand.email,
+            role:      "brand",
+            brand_id:  brand.brand_id,
+            brandName: brand.brand_name,
+            logo:      brand.logo,
+          },
+        });
+      });
+    });
   });
 };
