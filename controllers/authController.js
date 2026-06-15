@@ -13,12 +13,8 @@ exports.register = (req, res) => {
     return res.status(400).json({ message: "This email address is not available for registration." });
   }
 
-  // FIX: callback-based, no await
   db.query("SELECT user_id FROM users WHERE LOWER(email)=?", [normalizedEmail], (err, rows) => {
-    if (err) {
-      console.error("Register DB error:", err);
-      return res.status(500).json({ message: "Server error. Please try again." });
-    }
+    if (err) return res.status(500).json({ message: "Server error. Please try again." });
 
     if (rows.length) {
       return res.status(400).json({ message: "This email is already registered. Please login." });
@@ -28,10 +24,7 @@ exports.register = (req, res) => {
       if (hashErr) return res.status(500).json({ message: "Server error. Please try again." });
 
       db.query("INSERT INTO users (name,email,password) VALUES (?,?,?)", [name, normalizedEmail, hashed], (err2) => {
-        if (err2) {
-          console.error("Register insert error:", err2);
-          return res.status(500).json({ message: "Registration failed. Please try again." });
-        }
+        if (err2) return res.status(500).json({ message: "Registration failed. Please try again." });
         res.json({ message: "Account created successfully" });
       });
     });
@@ -43,12 +36,9 @@ exports.login = (req, res) => {
   const { email, password } = req.body;
   const normalizedEmail = (email || "").trim().toLowerCase();
 
-  // Check users table
+  // Pehle users table check karo
   db.query("SELECT * FROM users WHERE LOWER(email)=?", [normalizedEmail], (err, userRows) => {
-    if (err) {
-      console.error("Login DB error:", err);
-      return res.status(500).json({ message: "Server error. Please try again." });
-    }
+    if (err) return res.status(500).json({ message: "Server error. Please try again." });
 
     if (userRows.length) {
       const user = userRows[0];
@@ -66,24 +56,21 @@ exports.login = (req, res) => {
           user: { id: user.user_id, name: user.name, email: user.email, role: user.role },
         });
       });
-      return; // stop here — user found
+      return;
     }
 
-    // Not in users — check brands table
+    // Users mein nahi mila — brands table check karo
     db.query("SELECT * FROM brands WHERE LOWER(email)=?", [normalizedEmail], (err2, brandRows) => {
-      if (err2) {
-        console.error("Brand login DB error:", err2);
-        return res.status(500).json({ message: "Server error. Please try again." });
-      }
+      if (err2) return res.status(500).json({ message: "Server error. Please try again." });
 
       if (!brandRows.length) {
-        return res.status(401).json({ message: "Invalid credentials" });
+        return res.status(401).json({ message: "Invalid credentials | or Register First" });
       }
 
       const brand = brandRows[0];
 
       if (brand.status !== "APPROVED") {
-        return res.status(403).json({ message: "Your brand account is pending admin approval." });
+        return res.status(403).json({ message: "Your brand is pending admin approval." });
       }
 
       bcrypt.compare(password, brand.password, (cmpErr2, match2) => {
