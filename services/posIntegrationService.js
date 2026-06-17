@@ -370,7 +370,7 @@ async function createSquareOrder(order) {
 }
 
 // ════════════════════════════════════════
-//  DISPATCHER
+//  DISPATCHER — CREATE
 // ════════════════════════════════════════
 async function saveToExternalPOS(brandId, order) {
   const result = { loyverse_order_id: null, square_order_id: null };
@@ -389,111 +389,143 @@ async function saveToExternalPOS(brandId, order) {
   return result;
 }
 
-module.exports = { saveToExternalPOS, createLoyverseReceipt, createSquareOrder };
-
 // ════════════════════════════════════════
-//  VOID / CANCEL ON POS
-//  Called when user cancels, refunds, or exchanges on Khareedlo
+//  LOYVERSE — VOID (cancel a receipt)
+//  Called when user reports cancel/refund/exchange on Khareedlo
+//  Loyverse API: DELETE /v1.0/receipts/{receipt_number}
 // ════════════════════════════════════════
-
-// Loyverse: void a receipt by receipt_number
-async function voidLoyverseReceipt(receiptNumber) {
+async function voidLoyverseReceipt(loyverseOrderId) {
   const token = process.env.LOYVERSE_TOKEN;
 
   if (!token || token === "your_loyverse_token") {
-    console.log(`[Loyverse] Token missing — simulating void for ${receiptNumber}`);
+    console.log("[Loyverse Void] Token missing — simulated void for:", loyverseOrderId);
     return { success: true, simulated: true };
   }
 
-  // If it's a demo/simulated ID — nothing to void on real API
-  if (receiptNumber.startsWith("LYV-DEMO-")) {
-    console.log(`[Loyverse] Simulated receipt — skip void`);
+  // If this was already a simulated/demo ID, skip real API call
+  if (String(loyverseOrderId).startsWith("LYV-DEMO-")) {
+    console.log("[Loyverse Void] Demo ID detected — skipping real void:", loyverseOrderId);
     return { success: true, simulated: true };
   }
 
   try {
-    // Loyverse: DELETE /v1.0/receipts/{receipt_number}
+    console.log("[Loyverse Void] Voiding receipt:", loyverseOrderId);
+
     const result = await apiRequest(
       "api.loyverse.com",
-      `/v1.0/receipts/${receiptNumber}`,
+      `/v1.0/receipts/${encodeURIComponent(loyverseOrderId)}`,
       "DELETE",
-      { "Authorization": `Bearer ${token}` },
+      {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type":  "application/json",
+      },
       null
     );
 
-    console.log(`[Loyverse] Void response for ${receiptNumber}:`, result.status);
+    console.log("[Loyverse Void] Response:", result.status, JSON.stringify(result.data).slice(0, 200));
 
-    if (result.status === 200 || result.status === 204) {
+    // 200/204 = success, 404 = already gone (treat as success)
+    if ([200, 204, 404].includes(result.status)) {
       return { success: true };
     }
 
-    console.warn(`[Loyverse] Void failed (${result.status}) — may already be voided`);
-    return { success: false, status: result.status };
+    console.error("[Loyverse Void] Failed:", result.status, result.data);
+    // Don't block the flow — Khareedlo DB will still update
+    return { success: false, error: `Loyverse returned ${result.status}` };
 
   } catch (err) {
-    console.error("[Loyverse] Void error:", err.message);
+    console.error("[Loyverse Void] Error:", err.message);
     return { success: false, error: err.message };
   }
 }
 
-// Square: cancel an order by order_id
-async function voidSquareOrder(orderId) {
+// ════════════════════════════════════════
+//  SQUARE — CANCEL ORDER
+//  Called when user reports cancel/refund/exchange on Khareedlo
+//  Square API: POST /v2/orders/{order_id}/cancel
+// ════════════════════════════════════════
+async function cancelSquareOrder(squareOrderId) {
   const token    = process.env.SQUARE_ACCESS_TOKEN;
   const location = process.env.SQUARE_LOCATION_ID;
 
-  if (!token || token === "your_square_token") {
-    console.log(`[Square] Token missing — simulating void for ${orderId}`);
+  if (!token || token === "your_square_token" || !location) {
+    console.log("[Square Cancel] Credentials missing — simulated cancel for:", squareOrderId);
     return { success: true, simulated: true };
   }
 
-  if (orderId.startsWith("SQ-DEMO-")) {
-    console.log(`[Square] Simulated order — skip void`);
+  // If this was already a simulated/demo ID, skip real API call
+  if (String(squareOrderId).startsWith("SQ-DEMO-")) {
+    console.log("[Square Cancel] Demo ID detected — skipping real cancel:", squareOrderId);
     return { success: true, simulated: true };
   }
-
-  const squareHeaders = {
-    "Authorization":  `Bearer ${token}`,
-    "Content-Type":   "application/json",
-    "Square-Version": "2024-01-17",
-  };
 
   try {
-    // Square: PUT /v2/orders/{order_id} with state: CANCELED
+    console.log("[Square Cancel] Cancelling order:", squareOrderId);
+
     const result = await apiRequest(
       "connect.squareupsandbox.com",
-      `/v2/orders/${orderId}`,
-      "PUT",
-      squareHeaders,
+      `/v2/orders/${squareOrderId}/cancel`,
+      "POST",
       {
-        order: {
-          location_id: location,
-          state:       "CANCELED",
-          version:     1,
-        },
-        idempotency_key: `void-${orderId}-${Date.now()}`,
-      }
+        "Authorization":  `Bearer ${token}`,
+        "Content-Type":   "application/json",
+        "Square-Version": "2024-01-17",
+      },
+      {} // Square cancel endpoint requires empty body POST
     );
 
-    console.log(`[Square] Void response for ${orderId}:`, result.status);
+    console.log("[Square Cancel] Response:", result.status, JSON.stringify(result.data).slice(0, 200));
 
-    if (result.status === 200) {
+    if ([200, 201].includes(result.status)) {
       return { success: true };
     }
 
-    console.warn(`[Square] Void failed (${result.status}):`, result.data?.errors);
-    return { success: false, status: result.status };
+    // 404 = order not found or already cancelled — treat as success
+    if (result.status === 404) {
+      return { success: true, simulated: true };
+    }
+
+    console.error("[Square Cancel] Failed:", result.status, result.data?.errors);
+    return { success: false, error: `Square returned ${result.status}` };
 
   } catch (err) {
-    console.error("[Square] Void error:", err.message);
+    console.error("[Square Cancel] Error:", err.message);
     return { success: false, error: err.message };
   }
 }
 
-// Re-export with new functions
+// ════════════════════════════════════════
+//  DISPATCHER — CANCEL/VOID
+//  Called by orderRoutes PATCH /:id/cancel
+//  brandId=3 → Loyverse void, brandId=4 → Square cancel
+// ════════════════════════════════════════
+async function cancelInExternalPOS(brandId, order) {
+  const result = { loyverse_voided: false, square_cancelled: false, simulated: false };
+
+  if (Number(brandId) === 3 && order.loyverse_order_id) {
+    const resp = await voidLoyverseReceipt(order.loyverse_order_id);
+    result.loyverse_voided = resp.success;
+    if (resp.simulated) result.simulated = true;
+    console.log(`[POS Cancel] Loyverse void for order ${order.loyverse_order_id}: ${resp.success ? "✅" : "❌"}`);
+
+  } else if (Number(brandId) === 4 && order.square_order_id) {
+    const resp = await cancelSquareOrder(order.square_order_id);
+    result.square_cancelled = resp.success;
+    if (resp.simulated) result.simulated = true;
+    console.log(`[POS Cancel] Square cancel for order ${order.square_order_id}: ${resp.success ? "✅" : "❌"}`);
+
+  } else {
+    console.log(`[POS Cancel] Brand ${brandId} has no POS integration or no POS order ID — skipping`);
+  }
+
+  return result;
+}
+
 module.exports = {
   saveToExternalPOS,
+  cancelInExternalPOS,
   createLoyverseReceipt,
   createSquareOrder,
   voidLoyverseReceipt,
-  voidSquareOrder,
+  cancelSquareOrder,
 };
