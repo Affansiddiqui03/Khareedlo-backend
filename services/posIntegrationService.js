@@ -390,3 +390,110 @@ async function saveToExternalPOS(brandId, order) {
 }
 
 module.exports = { saveToExternalPOS, createLoyverseReceipt, createSquareOrder };
+
+// ════════════════════════════════════════
+//  VOID / CANCEL ON POS
+//  Called when user cancels, refunds, or exchanges on Khareedlo
+// ════════════════════════════════════════
+
+// Loyverse: void a receipt by receipt_number
+async function voidLoyverseReceipt(receiptNumber) {
+  const token = process.env.LOYVERSE_TOKEN;
+
+  if (!token || token === "your_loyverse_token") {
+    console.log(`[Loyverse] Token missing — simulating void for ${receiptNumber}`);
+    return { success: true, simulated: true };
+  }
+
+  // If it's a demo/simulated ID — nothing to void on real API
+  if (receiptNumber.startsWith("LYV-DEMO-")) {
+    console.log(`[Loyverse] Simulated receipt — skip void`);
+    return { success: true, simulated: true };
+  }
+
+  try {
+    // Loyverse: DELETE /v1.0/receipts/{receipt_number}
+    const result = await apiRequest(
+      "api.loyverse.com",
+      `/v1.0/receipts/${receiptNumber}`,
+      "DELETE",
+      { "Authorization": `Bearer ${token}` },
+      null
+    );
+
+    console.log(`[Loyverse] Void response for ${receiptNumber}:`, result.status);
+
+    if (result.status === 200 || result.status === 204) {
+      return { success: true };
+    }
+
+    console.warn(`[Loyverse] Void failed (${result.status}) — may already be voided`);
+    return { success: false, status: result.status };
+
+  } catch (err) {
+    console.error("[Loyverse] Void error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// Square: cancel an order by order_id
+async function voidSquareOrder(orderId) {
+  const token    = process.env.SQUARE_ACCESS_TOKEN;
+  const location = process.env.SQUARE_LOCATION_ID;
+
+  if (!token || token === "your_square_token") {
+    console.log(`[Square] Token missing — simulating void for ${orderId}`);
+    return { success: true, simulated: true };
+  }
+
+  if (orderId.startsWith("SQ-DEMO-")) {
+    console.log(`[Square] Simulated order — skip void`);
+    return { success: true, simulated: true };
+  }
+
+  const squareHeaders = {
+    "Authorization":  `Bearer ${token}`,
+    "Content-Type":   "application/json",
+    "Square-Version": "2024-01-17",
+  };
+
+  try {
+    // Square: PUT /v2/orders/{order_id} with state: CANCELED
+    const result = await apiRequest(
+      "connect.squareupsandbox.com",
+      `/v2/orders/${orderId}`,
+      "PUT",
+      squareHeaders,
+      {
+        order: {
+          location_id: location,
+          state:       "CANCELED",
+          version:     1,
+        },
+        idempotency_key: `void-${orderId}-${Date.now()}`,
+      }
+    );
+
+    console.log(`[Square] Void response for ${orderId}:`, result.status);
+
+    if (result.status === 200) {
+      return { success: true };
+    }
+
+    console.warn(`[Square] Void failed (${result.status}):`, result.data?.errors);
+    return { success: false, status: result.status };
+
+  } catch (err) {
+    console.error("[Square] Void error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// Re-export with new functions
+module.exports = {
+  saveToExternalPOS,
+  createLoyverseReceipt,
+  createSquareOrder,
+  voidLoyverseReceipt,
+  voidSquareOrder,
+};
