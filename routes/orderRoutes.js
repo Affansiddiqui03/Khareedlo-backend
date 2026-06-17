@@ -97,21 +97,27 @@ router.get("/brand/:brandId", async (req, res) => {
       [req.params.brandId]
     );
 
-    // Summary stats
-    const totalOrders  = rows.length;
-    const totalRevenue = rows.reduce((s, r) => s + parseFloat(r.total_price || 0), 0);
-    const loyverseOrders = rows.filter(r => r.source === "loyverse").length;
-    const squareOrders   = rows.filter(r => r.source === "square").length;
-    const selfReported   = rows.filter(r => r.source === "self_reported").length;
+    // Summary stats — cancelled/refunded/exchanged excluded from revenue
+    const cancelledStatuses = ["cancelled", "refunded", "exchanged"];
+    const activeOrders = rows.filter(r => !cancelledStatuses.includes(r.status));
+
+    const totalOrders      = rows.length;
+    const cancelledOrders  = rows.filter(r => cancelledStatuses.includes(r.status)).length;
+    const totalRevenue     = activeOrders.reduce((s, r) => s + parseFloat(r.total_price || 0), 0);
+    const loyverseOrders   = rows.filter(r => r.source === "loyverse").length;
+    const squareOrders     = rows.filter(r => r.source === "square").length;
+    const selfReported     = rows.filter(r => r.source === "self_reported").length;
 
     res.json({
       orders: rows,
       summary: {
-        total_orders:    totalOrders,
-        total_revenue:   parseFloat(totalRevenue.toFixed(2)),
-        loyverse_orders: loyverseOrders,
-        square_orders:   squareOrders,
-        self_reported:   selfReported,
+        total_orders:     totalOrders,
+        active_orders:    activeOrders.length,
+        cancelled_orders: cancelledOrders,
+        total_revenue:    parseFloat(totalRevenue.toFixed(2)),
+        loyverse_orders:  loyverseOrders,
+        square_orders:    squareOrders,
+        self_reported:    selfReported,
       },
     });
   } catch (err) {
@@ -151,6 +157,54 @@ router.patch("/:id/status", async (req, res) => {
     );
     res.json({ success: true });
   } catch (err) {
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// ── PATCH /api/orders/:id/cancel — Customer cancels/refunds/exchanges ──
+// Customer can mark their own order as cancelled, refunded, or exchanged
+// This updates Khareedlo DB and brand dashboard reflects it automatically
+router.patch("/:id/cancel", async (req, res) => {
+  const { reason, customer_id } = req.body;
+  // reason: "cancelled" | "refunded" | "exchanged"
+  const validReasons = ["cancelled", "refunded", "exchanged"];
+  if (!validReasons.includes(reason)) {
+    return res.status(400).json({ error: "Invalid reason. Must be: cancelled, refunded, or exchanged" });
+  }
+
+  try {
+    // Verify this order belongs to this customer
+    const [rows] = await db.promise().execute(
+      "SELECT * FROM platform_orders WHERE id = ? AND customer_id = ?",
+      [req.params.id, customer_id]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ error: "Order not found or unauthorized" });
+    }
+
+    const order = rows[0];
+
+    // Cannot cancel an already cancelled/refunded/exchanged order
+    if (["cancelled", "refunded", "exchanged"].includes(order.status)) {
+      return res.status(400).json({ error: "Order already " + order.status });
+    }
+
+    // Update status in DB
+    await db.promise().execute(
+      "UPDATE platform_orders SET status = ?, cancelled_at = NOW() WHERE id = ?",
+      [reason, req.params.id]
+    );
+
+    res.json({
+      success: true,
+      order_id: req.params.id,
+      new_status: reason,
+      message: `Order marked as ${reason} successfully`,
+    });
+
+  } catch (err) {
+    console.error("Order cancel error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
