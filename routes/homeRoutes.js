@@ -6,6 +6,9 @@ const db      = require("../config/db");
 const router  = express.Router();
 
 router.get("/popular-brands", (req, res) => {
+  // Ranked the same way as the "Top Rated" sort on the Brand Listing page:
+  // primarily by brand rating (b.rating), with engagement/visits only
+  // used to break ties between brands that share the same rating.
   const sql = `
     SELECT
       b.brand_id   AS id,
@@ -15,12 +18,7 @@ router.get("/popular-brands", (req, res) => {
       b.logo,
       b.description,
       COALESCE(pos.engagement, 0)  AS pos_engagement,
-      COALESCE(ubv.visit_count, 0) AS visit_count,
-      (
-        COALESCE(pos.engagement,  0) * 2 +
-        COALESCE(ubv.visit_count, 0) * 1 +
-        COALESCE(b.rating, 0)         * 10
-      ) AS score
+      COALESCE(ubv.visit_count, 0) AS visit_count
     FROM brands b
     LEFT JOIN (
       SELECT brand_id, COUNT(*) AS engagement
@@ -33,7 +31,9 @@ router.get("/popular-brands", (req, res) => {
       GROUP BY brand_id
     ) ubv ON ubv.brand_id = b.brand_id
     WHERE b.status = 'APPROVED'
-    ORDER BY score DESC
+    ORDER BY
+      COALESCE(b.rating, 0) DESC,
+      (COALESCE(pos.engagement, 0) + COALESCE(ubv.visit_count, 0)) DESC
     LIMIT 4
   `;
 
