@@ -9,7 +9,18 @@ const router = express.Router();
 const APPROVED_ONLY = "p.status = 'APPROVED'";
 
 // ── GET ALL PRODUCTS (public) ─────────────────────────────────
+// Supports optional ?brand_id=X query param for Exchange picker (server-side filter)
 router.get("/", (req, res) => {
+  const { brand_id } = req.query;
+
+  let whereClause = APPROVED_ONLY;
+  const params = [];
+
+  if (brand_id) {
+    whereClause += " AND p.brand_id = ?";
+    params.push(brand_id);
+  }
+
   const sql = `
     SELECT
       p.product_id        AS id,
@@ -34,11 +45,11 @@ router.get("/", (req, res) => {
     JOIN brands b ON p.brand_id = b.brand_id
     LEFT JOIN categories c ON p.category_id = c.category_id
     LEFT JOIN sub_categories s ON p.sub_category_id = s.sub_category_id
-    WHERE ${APPROVED_ONLY}
+    WHERE ${whereClause}
     ORDER BY p.product_id DESC
   `;
 
-  db.query(sql, (err, result) => {
+  db.query(sql, params, (err, result) => {
     if (err) return res.status(500).json(err);
 
     const products = result.map(row => ({

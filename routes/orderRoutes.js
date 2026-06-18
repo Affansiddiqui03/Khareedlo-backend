@@ -8,7 +8,7 @@
 const express = require("express");
 const router  = express.Router();
 const db      = require("../config/db");
-const { saveToExternalPOS, cancelInExternalPOS } = require("../services/posIntegrationService");
+const { saveToExternalPOS, reverseInExternalPOS } = require("../services/posIntegrationService");
 
 // ── POST /api/orders — Submit order after modal ───────────────
 router.post("/", async (req, res) => {
@@ -48,11 +48,13 @@ router.post("/", async (req, res) => {
     if (externalIds.square_order_id)   source = "square";
 
     // 2. Save to platform_orders table
+    // square_payment_id stored so refunds can be issued without extra API lookup
     const [result] = await db.promise().execute(
       `INSERT INTO platform_orders
          (customer_id, brand_id, product_id, product_name, brand_name,
-          quantity, unit_price, total_price, source, loyverse_order_id, square_order_id, product_image)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          quantity, unit_price, total_price, source,
+          loyverse_order_id, square_order_id, square_payment_id, product_image)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         customer_id   || null,
         brand_id,
@@ -63,8 +65,9 @@ router.post("/", async (req, res) => {
         unitPrice,
         totalPrice,
         source,
-        externalIds.loyverse_order_id || null,
-        externalIds.square_order_id   || null,
+        externalIds.loyverse_order_id  || null,
+        externalIds.square_order_id    || null,
+        externalIds.square_payment_id  || null,
         product_image || null,
       ]
     );
@@ -110,6 +113,11 @@ router.get("/brand/:brandId", async (req, res) => {
     const squareOrders     = rows.filter(r => r.source === "square").length;
     const selfReported     = rows.filter(r => r.source === "self_reported").length;
 
+    // Total refunded amount (for brand reporting)
+    const totalRefunded = rows
+      .filter(r => r.status === "refunded")
+      .reduce((s, r) => s + parseFloat(r.refunded_amount || r.total_price || 0), 0);
+
     res.json({
       orders: rows,
       summary: {
@@ -117,6 +125,7 @@ router.get("/brand/:brandId", async (req, res) => {
         active_orders:    activeOrders.length,
         cancelled_orders: cancelledOrders,
         total_revenue:    parseFloat(totalRevenue.toFixed(2)),
+        total_refunded:   parseFloat(totalRefunded.toFixed(2)),
         loyverse_orders:  loyverseOrders,
         square_orders:    squareOrders,
         self_reported:    selfReported,
@@ -192,26 +201,32 @@ router.patch("/:id/cancel", async (req, res) => {
       return res.status(400).json({ error: "Order already " + order.status });
     }
 
-    // Update status in DB first
+    // ── FIX #1: Set refunded_amount when reason is "refunded" ──
+    // This was missing before — now we save refunded_amount = total_price
+    const refundedAmount = reason === "refunded" ? parseFloat(order.total_price) : null;
+
+    // Update status + refunded_amount in DB
     await db.promise().execute(
-      "UPDATE platform_orders SET status = ?, cancelled_at = NOW() WHERE id = ?",
-      [reason, req.params.id]
+      `UPDATE platform_orders 
+       SET status = ?, cancelled_at = NOW(), refunded_amount = ?
+       WHERE id = ?`,
+      [reason, refundedAmount, req.params.id]
     );
 
-    // Also void/cancel in external POS (Loyverse for Alkaram, Square for Limelight)
-    // This runs async — DB is already updated, POS is best-effort
-    let posResult = { loyverse_voided: false, square_cancelled: false };
+    // Reverse in external POS — same function handles cancel/refund/exchange
+    // Loyverse → void receipt | Square → /v2/refunds (COMPLETED orders can't be cancelled)
+    let posResult = { loyverse_voided: false, square_reversed: false };
     try {
-      posResult = await cancelInExternalPOS(order.brand_id, order);
+      posResult = await reverseInExternalPOS(order.brand_id, order, reason);
     } catch (posErr) {
-      // POS failure does NOT block the user-facing response
-      console.error("[Order Cancel] POS void error (non-blocking):", posErr.message);
+      console.error("[Order Cancel] POS reverse error (non-blocking):", posErr.message);
     }
 
     res.json({
       success: true,
       order_id: req.params.id,
       new_status: reason,
+      refunded_amount: refundedAmount,  // Return to frontend so it can update UI
       message: `Order marked as ${reason} successfully`,
       pos: posResult,
     });
@@ -226,17 +241,27 @@ router.patch("/:id/cancel", async (req, res) => {
 router.get("/customer/:customerId", async (req, res) => {
   try {
     const [rows] = await db.promise().execute(
-      `SELECT po.*, p.image AS product_image
+      `SELECT po.*, p.image AS product_image_db
        FROM platform_orders po
        LEFT JOIN products p ON p.product_id = po.product_id
        WHERE po.customer_id = ?
        ORDER BY po.created_at DESC`,
       [req.params.customerId]
     );
-    res.json(rows);
+    // Use stored product_image first, fallback to product table image
+    const enriched = rows.map(r => ({
+      ...r,
+      product_image: r.product_image || r.product_image_db || null,
+    }));
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: "Server error" });
   }
 });
+
+// ── GET /api/products?brand_id=X — Filtered products for Exchange picker ──
+// FIX #3: Brand-filtered products endpoint so Exchange picker doesn't load ALL products
+// NOTE: This is added here as a supplementary route awareness note.
+// The actual fix is in productRoutes.js — add ?brand_id= query param support there.
 
 module.exports = router;
