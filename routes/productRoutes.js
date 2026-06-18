@@ -197,6 +197,50 @@ router.get("/brand/:brandId/subcategories/:categoryId", (req, res) => {
   });
 });
 
+// ── SEARCH BY BRAND NAME (fallback for exchange picker) ──────
+// GET /api/products/by-brand-name?name=Alkaram
+router.get("/by-brand-name", (req, res) => {
+  const { name } = req.query;
+  if (!name) return res.json([]);
+
+  const sql = `
+    SELECT
+      p.product_id        AS id,
+      p.product_name,
+      p.product_name      AS name,
+      p.price,
+      p.image,
+      p.discount_price,
+      p.gender,
+      p.category_id,
+      p.sub_category_id,
+      p.buy_now_link,
+      c.category_name,
+      s.sub_category_name,
+      b.brand_name        AS brand,
+      b.brand_name        AS brand_name,
+      b.website           AS brand_website
+    FROM products p
+    JOIN brands b ON p.brand_id = b.brand_id
+    LEFT JOIN categories c ON p.category_id = c.category_id
+    LEFT JOIN sub_categories s ON p.sub_category_id = s.sub_category_id
+    WHERE b.brand_name LIKE ? AND ${APPROVED_ONLY}
+    ORDER BY p.product_id DESC
+  `;
+
+  db.query(sql, [`%${name}%`], (err, result) => {
+    if (err) return res.status(500).json(err);
+    const products = result.map(p => ({
+      ...p,
+      image: p.image && p.image !== "photos/" && p.image !== ""
+        ? p.image
+        : resolveProductImage(p.product_name),
+      buy_now_link: p.buy_now_link || p.brand_website || null,
+    }));
+    res.json(products);
+  });
+});
+
 // ── SINGLE PRODUCT (must be last) ────────────────────────────
 router.get("/:id", (req, res) => {
   const sql = `
