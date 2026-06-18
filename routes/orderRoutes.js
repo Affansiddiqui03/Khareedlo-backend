@@ -20,6 +20,7 @@ router.post("/", async (req, res) => {
     brand_name,
     quantity,
     unit_price,
+    product_image,
   } = req.body;
 
   // Validation
@@ -50,8 +51,8 @@ router.post("/", async (req, res) => {
     const [result] = await db.promise().execute(
       `INSERT INTO platform_orders
          (customer_id, brand_id, product_id, product_name, brand_name,
-          quantity, unit_price, total_price, source, loyverse_order_id, square_order_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          quantity, unit_price, total_price, source, loyverse_order_id, square_order_id, product_image)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         customer_id   || null,
         brand_id,
@@ -64,6 +65,7 @@ router.post("/", async (req, res) => {
         source,
         externalIds.loyverse_order_id || null,
         externalIds.square_order_id   || null,
+        product_image || null,
       ]
     );
 

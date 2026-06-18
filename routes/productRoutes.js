@@ -58,9 +58,9 @@ router.get("/", (req, res) => {
 router.get("/brand/:brandId", (req, res) => {
   const sql = `
     SELECT
-      p.product_id   AS id,
+      p.product_id        AS id,
       p.product_name,
-      p.product_name AS name,
+      p.product_name      AS name,
       p.price,
       p.image,
       p.discount_price,
@@ -68,10 +68,14 @@ router.get("/brand/:brandId", (req, res) => {
       p.category_id,
       p.sub_category_id,
       p.buy_now_link,
-      b.brand_name   AS brand,
-      b.website      AS brand_website
+      c.category_name,
+      s.sub_category_name,
+      b.brand_name        AS brand,
+      b.website           AS brand_website
     FROM products p
     JOIN brands b ON p.brand_id = b.brand_id
+    LEFT JOIN categories c ON p.category_id = c.category_id
+    LEFT JOIN sub_categories s ON p.sub_category_id = s.sub_category_id
     WHERE p.brand_id = ? AND ${APPROVED_ONLY}
     ORDER BY p.product_id DESC
   `;
