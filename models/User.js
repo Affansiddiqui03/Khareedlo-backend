@@ -21,6 +21,9 @@ const UserSchema = new mongoose.Schema({
 
   wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: "Product" }],
 
+  // Cart stored in DB so mobile & desktop stay in sync
+  cart: { type: Array, default: [] },
+
   createdAt: { type: Date, default: Date.now },
 
   activityStats: {

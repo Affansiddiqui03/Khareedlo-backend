@@ -21,6 +21,7 @@ const ratingsRoutes = require("./routes/ratingsRoutes");
 const contactRoutes = require("./routes/contactRoutes");
 const syncRoutes = require("./routes/syncRoutes");
 const orderRoutes = require("./routes/orderRoutes");
+const cartRoutes  = require("./routes/cartRoutes");
 // Middleware
 app.use(express.json());
 app.use(cors());
@@ -47,6 +48,7 @@ app.use("/api/contact", contactRoutes);
 app.use("/api/ratings", require("./routes/ratingsRoutes"));
 app.use("/api/sync", syncRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/cart",   cartRoutes);
 
 
 app.use(
